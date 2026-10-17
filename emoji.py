@@ -1,0 +1,90 @@
+"""Эмодзи для сообщений.
+
+Оформление — анимированные эмодзи из официального пака Telegram «Animated Emoji» (RestrictedEmoji).
+Иконки героев, предметов и медалей — из собственных паков бота (их создаёт custom_packs.py).
+Премиум-эмодзи работают, только если у владельца бота есть Telegram Premium (Bot API 9.4+).
+Любой ключ можно переопределить в emoji.json (ID узнаётся командой /emoji).
+"""
+import json
+import re
+
+from config import EMOJI_FILE
+
+# ключ: (обычный эмодзи, custom_emoji_id из пака RestrictedEmoji)
+DEFAULTS = {
+    "win": ("🏆", "5409008750893734809"),
+    "lose": ("💀", "5370971163310693562"),
+    "time": ("⏳", "5451732530048802485"),
+    "hero": ("🎮", "5467583879948803288"),
+    "pos": ("🎯", "5350460637182993292"),
+    "rank": ("🏅", "5334644364280866007"),
+    "mmr_up": ("📈", "5373001317042101552"),
+    "mmr_down": ("📉", "5361748661640372834"),
+    "kda": ("⚔️", "5408935401442267103"),
+    "gpm": ("💰", "5375296873982604963"),
+    "xpm": ("📚", "5373098009640836781"),
+    "creeps": ("🗡", "5393607290228067750"),
+    "nw": ("💎", "5471952986970267163"),
+    "nw10": ("⌛", "5451646226975955576"),
+    "items": ("🔮", "5361837567463399422"),
+    "neutral": ("🌿", "5449850741667668411"),
+    "up": ("📈", "5373001317042101552"),
+    "down": ("📉", "5361748661640372834"),
+    "same": ("➖", "5229113891081956317"),
+    "stats": ("📊", "5431577498364158238"),
+    "fire": ("🔥", "5420315771991497307"),
+    "crown": ("👑", "5467406098367521267"),
+    "link": ("🔗", "5375129357373165375"),
+    "wave": ("👋", "5472055112702629499"),
+    "ok": ("✅", "5427009714745517609"),
+    "warn": ("❗", "5467928559664242360"),
+    "radiant": ("☀️", "5469947168523558652"),   # Силы Света
+    "dire": ("🌑", "5188497854242495901"),      # Силы Тьмы
+    "new_rank": ("🎉", "5436040291507247633"),
+    "fav": ("❤️", "5449505950283078474"),
+    "matches": ("👁", "5424892643760937442"),
+    "party": ("🥳", "5370870691140737817"),
+    "sad": ("😭", "5370646412243510708"),
+}
+
+_override: dict[str, str] = {}
+# динамические иконки (hero:74, item:blink, rank:65) -> custom_emoji_id; заполняет custom_packs
+dynamic: dict[str, str] = {}
+
+
+def load():
+    global _override
+    if EMOJI_FILE.exists():
+        data = json.loads(EMOJI_FILE.read_text("utf-8"))
+        _override = {k: str(v) for k, v in data.items() if v and not k.startswith("_")}
+
+
+def tg(cid: str | None, char: str) -> str:
+    return f'<tg-emoji emoji-id="{cid}">{char}</tg-emoji>' if cid else char
+
+
+def e(key: str) -> str:
+    char, cid = DEFAULTS.get(key, ("•", None))
+    return tg(_override.get(key) or dynamic.get(f"ui:{key}") or cid, char)
+
+
+def hero_e(hero_id: int) -> str:
+    return tg(dynamic.get(f"hero:{hero_id}"), "🦸") if f"hero:{hero_id}" in dynamic else e("hero")
+
+
+def item_e(item_name: str) -> str | None:
+    cid = dynamic.get(f"item:{item_name}")
+    return tg(cid, "🗡") if cid else None
+
+
+def rank_e(rank_tier: int | None) -> str:
+    cid = dynamic.get(f"rank:{rank_tier}") if rank_tier else None
+    return tg(cid, "🏅") if cid else e("rank")
+
+
+def strip_custom(html: str) -> str:
+    """Убирает премиум-эмодзи, оставляя обычные (на случай, если Telegram их не принял)."""
+    return re.sub(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>', r"\1", html)
+
+
+load()

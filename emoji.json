@@ -1,0 +1,3 @@
+{
+  "_comment": "Переопределение эмодзи: \"ключ\": \"custom_emoji_id\". Ключи — см. DEFAULTS в emoji.py (win, lose, gpm, ...). ID узнаётся командой /emoji."
+}
