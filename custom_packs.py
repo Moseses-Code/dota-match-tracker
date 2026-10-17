@@ -16,13 +16,14 @@ from PIL import Image, ImageDraw, ImageOps
 
 import emoji
 from api import Api
-from config import BASE_DIR, OWNER_ID
+from config import BASE_DIR, DATA_DIR, OWNER_ID
 from db import DB
 
 log = logging.getLogger(__name__)
 
 SIZE = 100
-MAP_FILE = BASE_DIR / "emoji_map.json"
+MAP_FILE = BASE_DIR / "emoji_map.json"     # в репозитории: эмодзи, загруженные при разработке
+LOCAL_MAP = DATA_DIR / "emoji_map.json"    # на сервере: новые эмодзи (папка data/ не в git)
 PACK_LIMIT = 200
 RANK_URL = "https://www.opendota.com/assets/images/dota2/rank_icons/"
 CDN = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/"
@@ -103,10 +104,11 @@ class Packs:
         self.username = (await self.bot.get_me()).username
         # ID уже загруженных эмодзи хранятся и в emoji_map.json (в репозитории), чтобы на новом
         # сервере бот не загружал всё заново и не плодил дубли в паках
-        if MAP_FILE.exists():
-            for key, cid in json.loads(MAP_FILE.read_text("utf-8")).items():
-                await self.db.set_emoji(key, cid)
-        MAP_FILE.write_text(json.dumps(dict(sorted(emoji.dynamic.items())), indent=0), "utf-8")
+        for f in (MAP_FILE, LOCAL_MAP):
+            if f.exists():
+                for key, cid in json.loads(f.read_text("utf-8")).items():
+                    await self.db.set_emoji(key, cid)
+        LOCAL_MAP.write_text(json.dumps(dict(sorted(emoji.dynamic.items())), indent=0), "utf-8")
         emoji.dynamic.update(await self.db.all_emoji())
         log.info("custom emoji loaded: %d", len(emoji.dynamic))
 
