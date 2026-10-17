@@ -79,6 +79,8 @@ class Player:
     rank_tier: int | None
     lane_role: int | None
     benchmarks: dict
+    leaver: bool = False        # вылетел/покинул игру — его фарм не отражает роль
+    hero_roles: tuple = ()
     position: int | None = None
     position_exact: bool = False
 
@@ -139,6 +141,8 @@ def parse_match(data: dict, api: Api) -> Match:
             rank_tier=p.get("rank_tier"),
             lane_role=p.get("lane_role"),
             benchmarks=p.get("benchmarks") or {},
+            leaver=(p.get("leaver_status") or 0) > 0,
+            hero_roles=tuple(hero.get("roles") or ()),
         ))
 
     bans = {True: [], False: []}
@@ -161,41 +165,53 @@ def parse_match(data: dict, api: Api) -> Match:
     return m
 
 
+SAFE, MID, OFF = 1, 2, 3   # lane_role из OpenDota
+# кор и саппорт каждой линии: лёгкая — 1 и 5, мид — 2, сложная — 3 и 4
+LANE_POS = {SAFE: (1, 5), MID: (2, None), OFF: (3, 4)}
+
+
+def _farm(p: Player) -> float:
+    """Фарм для сравнения внутри линии: золото на 10-й минуте (стадия линий),
+    а не итоговый нетворс, который ломается, если игрок вылетел позже."""
+    if p.leaver:
+        # вылетевший сравнивается по роли героя: керри выше саппорта
+        return 1e9 if "Carry" in p.hero_roles else (-1 if "Support" in p.hero_roles else 0)
+    if p.nw10 is not None:
+        return p.nw10
+    return p.lh10 if p.lh10 is not None else p.nw
+
+
 def guess_positions(m: Match):
-    """Позиции по линиям (lane_role) и нетворсу. Для непропарсенных матчей — только по нетворсу."""
+    """Позиции строго по линиям: на каждой линии сравниваются только стоявшие на ней.
+
+    Лёгкая: больше фарм на 10-й минуте — pos 1, меньше — pos 5. Сложная: 3 и 4.
+    Мид — всегда pos 2. Без разбора реплея линий нет — позицию не угадываем
+    (её может проставить STRATZ).
+    """
     for radiant in (True, False):
         team = [p for p in m.players if p.is_radiant == radiant]
+        if not any(p.lane_role in LANE_POS for p in team):
+            continue
         free = {1, 2, 3, 4, 5}
         rest = []
-        lanes = {1: [], 2: [], 3: []}
-        for p in team:
-            if p.lane_role in lanes:
-                lanes[p.lane_role].append(p)
-            else:
-                rest.append(p)
-        core_pos = {1: 1, 2: 2, 3: 3}       # safe -> 1, mid -> 2, off -> 3
-        for lane, ps in lanes.items():
-            ps.sort(key=lambda p: p.nw, reverse=True)
-            if ps:
-                ps[0].position = core_pos[lane]
-                free.discard(core_pos[lane])
-                rest.extend(ps[1:])
-        # оставшихся раскидываем: свободные позиции по возрастанию, игроки по убыванию нетворса
-        # (саппорт с оффлейна обычно 4, с лёгкой — 5; это учитываем, если обе позиции свободны)
-        rest.sort(key=lambda p: p.nw, reverse=True)
-        if {4, 5} <= free and len(rest) >= 2:
-            off = [p for p in rest if p.lane_role == 3]
-            safe = [p for p in rest if p.lane_role == 1]
-            if len(off) == 1 and len(safe) == 1:
-                off[0].position, safe[0].position = 4, 5
-                free -= {4, 5}
-                rest = [p for p in rest if p not in (off[0], safe[0])]
+        for lane, (core, support) in LANE_POS.items():
+            ps = sorted((p for p in team if p.lane_role == lane), key=_farm, reverse=True)
+            if not ps:
+                continue
+            roles = [core, support] if support else [core]
+            for p, pos in zip(ps, roles):
+                p.position = pos
+                free.discard(pos)
+            rest.extend(ps[len(roles):])
+        # трилайн, роумеры, лес: оставшиеся позиции по убыванию фарма
+        rest += [p for p in team if p.lane_role not in LANE_POS]
+        rest.sort(key=_farm, reverse=True)
         for p, pos in zip(rest, sorted(free)):
             p.position = pos
 
 
 async def apply_stratz_positions(m: Match, api: Api):
-    """Точные позиции из STRATZ (по ролевому поиску), если есть токен."""
+    """Позиции из STRATZ для тех, кому не нашлось позиции по линиям (матч не разобран)."""
     if not api.has_stratz:
         return
     try:
@@ -208,6 +224,8 @@ async def apply_stratz_positions(m: Match, api: Api):
     players = ((data or {}).get("match") or {}).get("players") or []
     by_hero = {p["heroId"]: p.get("position") for p in players}
     for p in m.players:
+        if p.position:   # позиции по линиям из разбора важнее: STRATZ тоже смотрит на фарм
+            continue
         pos = by_hero.get(p.hero_id)
         if pos and pos.startswith("POSITION_"):
             p.position = int(pos[-1])
