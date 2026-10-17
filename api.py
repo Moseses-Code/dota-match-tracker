@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 OPENDOTA = "https://api.opendota.com/api"
 STRATZ = "https://api.stratz.com/graphql"
 STEAM_CDN = "https://cdn.cloudflare.steamstatic.com"
+REFRESH_EVERY = 300   # не чаще раза в 5 минут просим OpenDota обновить историю игрока
 
 
 class RateLimiter:
@@ -42,6 +43,7 @@ class Api:
         self.sz_limit = RateLimiter(0.3)
         self.heroes: dict[int, dict] = {}
         self.items: dict[int, dict] = {}   # id -> {name, dname, img}
+        self._refreshed: dict[int, float] = {}
 
     async def open(self):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
@@ -116,16 +118,39 @@ class Api:
                 "matches": (wl.get("win") or 0) + (wl.get("lose") or 0), "wins": wl.get("win") or 0,
                 "heroes": [(int(h["hero_id"]), h["games"], h["win"]) for h in heroes[:3] if h.get("games")]}
 
+    async def refresh_player(self, account_id):
+        """Просит OpenDota подтянуть свежую историю из Steam (иначе recentMatches может отставать)."""
+        acc = int(account_id)
+        if time.monotonic() - self._refreshed.get(acc, -REFRESH_EVERY) < REFRESH_EVERY:
+            return
+        self._refreshed[acc] = time.monotonic()
+        try:
+            await self.od(f"/players/{acc}/refresh", method="POST")
+        except ApiError as e:
+            log.info("refresh %s failed: %s", acc, e)
+
     async def latest_matches(self, account_id) -> list[dict]:
-        """Последние матчи игрока, новые сверху: STRATZ, при ошибке — OpenDota."""
+        """Последние матчи игрока, новые сверху: объединяем STRATZ и OpenDota.
+
+        Любой из источников может отставать на несколько матчей, поэтому берём оба,
+        а не только первый ответивший — иначе новый матч не виден, пока его не увидит STRATZ.
+        """
+        found: dict[int, dict] = {}
         if self.has_stratz:
             try:
-                res = await self.stratz_recent(account_id)
-                if res:
-                    return sorted(res, key=lambda r: r["match_id"], reverse=True)
+                for r in await self.stratz_recent(account_id):
+                    found[r["match_id"]] = r
             except ApiError as e:
                 log.info("STRATZ recent: %s", e)
-        return await self.recent_matches(account_id)
+        await self.refresh_player(account_id)
+        try:
+            for r in await self.recent_matches(account_id):
+                found.setdefault(r["match_id"], r)
+        except ApiError as e:
+            if not found:
+                raise
+            log.info("OpenDota recent: %s", e)
+        return sorted(found.values(), key=lambda r: r["match_id"], reverse=True)
 
     async def match(self, match_id):
         return await self.od(f"/matches/{match_id}")
