@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- скрипт Telegram и шрифты грузятся без блокировки: страница рисуется сразу, даже если они медленные -->
+<script src="https://telegram.org/js/telegram-web-app.js" async onload="window.initTg && initTg()"></script>
 <title>Dota Match Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
 <style>
 /* Макет: шапка игрока + липкие вкладки, под ними одна колонка карточек; матч открывается поверх экраном. */
 :root {
@@ -725,12 +726,15 @@ function closeMatch() { $("#sheet").hidden = true; document.body.style.overflow 
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) closeMatch(); });
 
 /* ---------- Telegram и запуск ---------- */
-const tg = window.Telegram?.WebApp;
-if (tg && tg.initData !== undefined) {
+let tg = null;
+window.initTg = () => {
+  if (tg || !window.Telegram?.WebApp) return;
+  tg = window.Telegram.WebApp;
   tg.ready(); tg.expand();
   tg.BackButton?.onClick(closeMatch);
   if (tg.colorScheme) document.documentElement.dataset.theme = tg.colorScheme;   // тема Telegram
-}
+};
+window.initTg();   // если скрипт Telegram уже успел загрузиться
 
 async function start() {
   renderTabs();
