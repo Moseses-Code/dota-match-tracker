@@ -1,6 +1,8 @@
-// Cloudflare Workers: мини-приложение «Статистика» — статичные файлы из webapp/ (см. DEPLOY.md, шаг 7)
+// Cloudflare Workers: мини-приложение «Статистика» (см. DEPLOY.md, шаг 7).
+// Статичные файлы — из webapp/, запросы /api/* — через worker.js к OpenDota.
 {
   "name": "dota-match-tracker",
+  "main": "worker.js",
   "compatibility_date": "2025-06-01",
-  "assets": { "directory": "./webapp" }
+  "assets": { "directory": "./webapp", "binding": "ASSETS" }
 }
