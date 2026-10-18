@@ -234,19 +234,24 @@ def guess_positions(m: Match):
             p.position = pos
 
 
-async def apply_stratz_positions(m: Match, api: Api):
-    """Позиции из STRATZ для тех, кому не нашлось позиции по линиям (матч не разобран)."""
+async def apply_stratz(m: Match, api: Api):
+    """Одним запросом к STRATZ: позиции тем, кому не нашлось позиции по линиям (матч не разобран),
+    и баны, которых нет у OpenDota (в All Pick она присылает не все)."""
     if not api.has_stratz:
         return
     try:
         data = await api.stratz(
-            f"{{ match(id: {m.match_id}) {{ players {{ heroId position }} }} }}"
-        )
+            f"{{ match(id: {m.match_id}) {{ players {{ heroId position }}"
+            f" pickBans {{ heroId isPick isRadiant wasBannedSuccessfully }} }} }}")
     except ApiError as e:
-        log.info("STRATZ positions: %s", e)
-        return
-    players = ((data or {}).get("match") or {}).get("players") or []
-    by_hero = {p["heroId"]: p.get("position") for p in players}
+        log.info("STRATZ match: %s", e)
+        try:   # если не прошёл общий запрос — хотя бы позиции
+            data = await api.stratz(f"{{ match(id: {m.match_id}) {{ players {{ heroId position }} }} }}")
+        except ApiError as e2:
+            log.info("STRATZ positions: %s", e2)
+            return
+    match = (data or {}).get("match") or {}
+    by_hero = {p["heroId"]: p.get("position") for p in match.get("players") or []}
     for p in m.players:
         if p.position:   # позиции по линиям из разбора важнее: STRATZ тоже смотрит на фарм
             continue
@@ -254,21 +259,8 @@ async def apply_stratz_positions(m: Match, api: Api):
         if pos and pos.startswith("POSITION_"):
             p.position = int(pos[-1])
             p.position_exact = True
-
-
-async def apply_stratz_bans(m: Match, api: Api):
-    """Дополняет баны из STRATZ: в All Pick OpenDota присылает не все."""
-    if not api.has_stratz:
-        return
-    try:
-        data = await api.stratz(
-            f"{{ match(id: {m.match_id}) {{ pickBans {{ heroId isPick isRadiant wasBannedSuccessfully }} }} }}"
-        )
-    except ApiError as e:
-        log.info("STRATZ bans: %s", e)
-        return
     picked = {p.hero_id for p in m.players}
-    for pb in ((data or {}).get("match") or {}).get("pickBans") or []:
+    for pb in match.get("pickBans") or []:
         hid = pb.get("heroId")
         # в All Pick предложенный бан может не пройти — такие пропускаем
         if pb.get("isPick") or not hid or pb.get("wasBannedSuccessfully") is False or hid in picked:

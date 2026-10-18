@@ -1,5 +1,6 @@
 """Клиенты OpenDota (REST) и STRATZ (GraphQL)."""
 import asyncio
+import contextvars
 import json
 import logging
 import time
@@ -14,22 +15,39 @@ OPENDOTA = "https://api.opendota.com/api"
 STRATZ = "https://api.stratz.com/graphql"
 STEAM_CDN = "https://cdn.cloudflare.steamstatic.com"
 REFRESH_EVERY = 300   # не чаще раза в 5 минут просим OpenDota обновить историю игрока
+BG_OPENDOTA_EVERY = 600   # фоновая проверка спрашивает OpenDota не чаще раза в 10 минут на игрока
+# True внутри фоновых задач (проверка матчей): их запросы уступают очередь командам пользователей
+BACKGROUND = contextvars.ContextVar("background", default=False)
 
 
 class RateLimiter:
-    """Не чаще одного запроса в `interval` секунд."""
+    """Не чаще одного запроса в `interval` секунд. Фоновые запросы пропускают вперёд
+    запросы пользователей: пока кто-то из пользователей ждёт очереди, фон не встаёт в неё."""
 
     def __init__(self, interval: float):
         self.interval = interval
         self._lock = asyncio.Lock()
         self._last = 0.0
+        self._waiting = 0   # запросов пользователей в очереди
 
     async def wait(self):
-        async with self._lock:
-            delay = self._last + self.interval - time.monotonic()
-            if delay > 0:
-                await asyncio.sleep(delay)
-            self._last = time.monotonic()
+        background = BACKGROUND.get()
+        if not background:
+            self._waiting += 1
+        try:
+            while True:
+                async with self._lock:
+                    # фон, дошедший до своей очереди, уступает её, если ждёт пользователь
+                    if not (background and self._waiting):
+                        delay = self._last + self.interval - time.monotonic()
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                        self._last = time.monotonic()
+                        return
+                await asyncio.sleep(0.05)
+        finally:
+            if not background:
+                self._waiting -= 1
 
 
 class ApiError(Exception):
@@ -44,6 +62,8 @@ class Api:
         self.heroes: dict[int, dict] = {}
         self.items: dict[int, dict] = {}   # id -> {name, dname, img, cost}
         self._refreshed: dict[int, float] = {}
+        self._od_checked: dict[int, float] = {}   # когда фоновая проверка последний раз спрашивала OpenDota
+        self._tasks: set[asyncio.Task] = set()     # фоновые задачи (ссылка, чтобы их не собрал сборщик мусора)
 
     async def open(self):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
@@ -138,12 +158,15 @@ class Api:
         except ApiError as e:
             log.info("refresh %s failed: %s", acc, e)
 
-    async def latest_matches(self, account_id) -> list[dict]:
+    async def latest_matches(self, account_id, known_last: int | None = None) -> list[dict]:
         """Последние матчи игрока, новые сверху: объединяем STRATZ и OpenDota.
 
         Любой из источников может отставать на несколько матчей, поэтому берём оба,
         а не только первый ответивший — иначе новый матч не виден, пока его не увидит STRATZ.
+        known_last — для фоновой проверки: если STRATZ уже показал матч новее, OpenDota не спрашиваем,
+        а если нет — спрашиваем не чаще раза в BG_OPENDOTA_EVERY секунд, чтобы не забивать очередь.
         """
+        acc = int(account_id)
         found: dict[int, dict] = {}
         if self.has_stratz:
             try:
@@ -151,7 +174,16 @@ class Api:
                     found[r["match_id"]] = r
             except ApiError as e:
                 log.info("STRATZ recent: %s", e)
-        await self.refresh_player(account_id)
+        if known_last is not None and found:
+            fresh = max(found) > known_last
+            if fresh or time.monotonic() - self._od_checked.get(acc, -BG_OPENDOTA_EVERY) < BG_OPENDOTA_EVERY:
+                return sorted(found.values(), key=lambda r: r["match_id"], reverse=True)
+        if known_last is not None:
+            self._od_checked[acc] = time.monotonic()
+        # просьба обновить историю — в фоне: пользователь её не ждёт, она пригодится к следующему разу
+        task = asyncio.create_task(self._refresh_background(acc))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         try:
             for r in await self.recent_matches(account_id):
                 found.setdefault(r["match_id"], r)
@@ -160,6 +192,10 @@ class Api:
                 raise
             log.info("OpenDota recent: %s", e)
         return sorted(found.values(), key=lambda r: r["match_id"], reverse=True)
+
+    async def _refresh_background(self, acc: int):
+        BACKGROUND.set(True)
+        await self.refresh_player(acc)
 
     async def match(self, match_id):
         return await self.od(f"/matches/{match_id}")

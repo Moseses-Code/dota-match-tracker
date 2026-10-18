@@ -6,7 +6,7 @@ import time
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 
-from api import Api, ApiError
+from api import BACKGROUND, Api, ApiError
 from config import PARSE_WAIT_MIN, POLL_ACTIVE, POLL_IDLE
 from db import DB
 from service import make_report, send_report, update_webapp_button
@@ -21,7 +21,7 @@ _last_check: dict[tuple[int, int], float] = {}
 
 async def check_user(api: Api, db: DB, user):
     now = int(time.time())
-    recent = await api.latest_matches(user["account_id"])
+    recent = await api.latest_matches(user["account_id"], known_last=user["last_match_id"] or 0)
     new = sorted((r for r in recent if r["match_id"] > (user["last_match_id"] or 0)),
                  key=lambda r: r["match_id"])
     last_id, last_played = user["last_match_id"] or 0, user["last_played"] or 0
@@ -85,6 +85,7 @@ async def process_pending(bot: Bot, api: Api, db: DB):
 
 async def run_tracker(bot: Bot, api: Api, db: DB):
     log.info("tracker started")
+    BACKGROUND.set(True)   # запросы трекера уступают очередь командам пользователей
     while True:
         try:
             for user in await db.users_due(int(time.time())):
