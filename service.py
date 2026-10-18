@@ -7,7 +7,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
 
-from analysis import (apply_stratz_bans, apply_stratz_positions, estimate_mmr, mmr_to_rank_tier, parse_match,
+from analysis import (apply_stratz, estimate_mmr, mmr_to_rank_tier, parse_match,
                       rank_tier_range)
 from api import Api
 from averages import get_averages
@@ -36,8 +36,7 @@ def match_keyboard(match_id: int) -> InlineKeyboardMarkup:
 async def _load(api: Api, data: dict, user, player_slot: int | None = None):
     """Матч с позициями и банами + сам игрок (или None, если его нет в матче)."""
     m = parse_match(data, api)
-    await apply_stratz_positions(m, api)
-    await apply_stratz_bans(m, api)
+    await apply_stratz(m, api)
     me = m.find(user["account_id"])
     if me is None and player_slot is not None:   # если матчи скрыты, account_id может не прийти
         me = next((p for p in m.players if p.slot == player_slot), None)
