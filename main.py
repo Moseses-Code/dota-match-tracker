@@ -7,6 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, LinkPreviewOptions
 
+import admin
 import bot_profile
 import handlers
 import service
@@ -42,6 +43,7 @@ async def main():
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(
         parse_mode=ParseMode.HTML, link_preview=LinkPreviewOptions(is_disabled=True)))
     dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(admin.setup(db))   # раньше основного: у владельца «Админ» и рассылка в приоритете
     dp.include_router(handlers.setup(api, db))
     await bot.set_my_commands(COMMANDS)
     await bot_profile.apply(bot)
