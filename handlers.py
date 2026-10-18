@@ -17,7 +17,7 @@ from api import Api, ApiError
 from buttons import BLUE, GREEN, RED, ib, rb
 from config import MMR_STEP, OWNER_ID
 from db import DB
-from emoji import dynamic, e, hero_e, rank_e
+from emoji import e, hero_e, rank_e, strip_custom
 from report import fmt_time
 from service import make_details, make_report, send_report
 
@@ -261,11 +261,13 @@ def setup(api: Api, db: DB):
             await send_last(bot, msg.chat.id, user)
 
     async def history_page(user, offset: int):
+        """Список матчей текстом (WIN/LOSS — премиум-эмодзи, в кнопку их не вставить)
+        и под ним цветные кнопки с номерами матчей."""
         acc = user["account_id"]
         rows = await api.match_history(acc, HISTORY_PAGE + 1, offset)
         has_next = len(rows) > HISTORY_PAGE
         rows = rows[:HISTORY_PAGE]
-        buttons = []
+        items = []   # (match_id, строка, победа: True/False/None)
         if offset == 0:   # свежие матчи, которые OpenDota ещё не показывает в истории
             top = rows[0]["match_id"] if rows else 0
             try:
@@ -273,19 +275,27 @@ def setup(api: Api, db: DB):
             except ApiError:
                 fresh = []
             for r in fresh:
-                buttons.append([ib(f"Новый матч · {fmt_time(r.get('duration') or 0)}"
-                                   f" · {ago((r.get('start_time') or 0) + (r.get('duration') or 0))}",
-                                   "fire", BLUE, callback_data=f"m:{r['match_id']}")])
+                end = (r.get("start_time") or 0) + (r.get("duration") or 0)
+                items.append((r["match_id"], f"{e('fire')} Новый матч · {fmt_time(r.get('duration') or 0)}"
+                                             f" · {ago(end)}", None))
         for r in rows:
             hid = r.get("hero_id")
-            hero = api.heroes.get(hid, {}).get("localized_name", f"#{hid}")
+            hero = escape(api.heroes.get(hid, {}).get("localized_name", f"#{hid}"))
             won = None if r.get("radiant_win") is None else (r.get("player_slot", 0) < 128) == r["radiant_win"]
-            text = (f"{hero} · {r.get('kills', 0)}/{r.get('deaths', 0)}/{r.get('assists', 0)}"
-                    f" · {fmt_time(r.get('duration') or 0)}"
-                    f" · {ago((r.get('start_time') or 0) + (r.get('duration') or 0))}")
-            buttons.append([ib(text, f"hero:{hid}" if f"hero:{hid}" in dynamic else None,
-                               None if won is None else (GREEN if won else RED),
-                               callback_data=f"m:{r['match_id']}")])
+            result = e("same") if won is None else e("win" if won else "lose")
+            end = (r.get("start_time") or 0) + (r.get("duration") or 0)
+            items.append((r["match_id"], f"{result} {hero_e(hid)} {hero} · "
+                                         f"{r.get('kills', 0)}/{r.get('deaths', 0)}/{r.get('assists', 0)}"
+                                         f" · {fmt_time(r.get('duration') or 0)} · {ago(end)}", won))
+        if not items:
+            return f"{e('warn')} Не вижу твоих матчей. Проверь, что история матчей открыта.", None
+
+        lines = [f"{e('matches')} <b>Мои матчи</b> · {offset + 1}–{offset + len(rows)}", ""]
+        lines += [f"<b>{i}.</b> {text}" for i, (_, text, _) in enumerate(items, 1)]
+        lines += ["", "<i>Нажми на номер, чтобы посмотреть отчёт.</i>"]
+        numbers = [ib(str(i), style=None if won is None else (GREEN if won else RED), callback_data=f"m:{mid}")
+                   for i, (mid, _, won) in enumerate(items, 1)]
+        buttons = [numbers[i:i + 5] for i in range(0, len(numbers), 5)]
         nav = []
         if offset > 0:
             nav.append(ib("◀️ Новее", callback_data=f"hist:{max(0, offset - HISTORY_PAGE)}"))
@@ -293,11 +303,7 @@ def setup(api: Api, db: DB):
             nav.append(ib("Старее ▶️", callback_data=f"hist:{offset + HISTORY_PAGE}"))
         if nav:
             buttons.append(nav)
-        if not rows and not buttons:
-            return f"{e('warn')} Не вижу твоих матчей. Проверь, что история матчей открыта.", None
-        text = (f"{e('matches')} <b>Мои матчи</b> · {offset + 1}–{offset + len(rows)}\n"
-                "Нажми на матч, чтобы посмотреть отчёт.")
-        return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+        return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
 
     @router.message(Command("history"))
     @router.message(btn(BTN_HISTORY))
@@ -310,7 +316,10 @@ def setup(api: Api, db: DB):
         except ApiError:
             await msg.answer(f"{e('warn')} OpenDota не отвечает, попробуй позже.")
             return
-        await msg.answer(text, reply_markup=markup)
+        try:
+            await msg.answer(text, reply_markup=markup)
+        except TelegramBadRequest:   # премиум-эмодзи не приняты — шлём с обычными
+            await msg.answer(strip_custom(text), reply_markup=markup)
 
     @router.callback_query(F.data.startswith("hist:"))
     async def history_cb(cb: CallbackQuery):
@@ -324,7 +333,10 @@ def setup(api: Api, db: DB):
         try:
             await cb.message.edit_text(text, reply_markup=markup)
         except TelegramBadRequest:
-            pass
+            try:
+                await cb.message.edit_text(strip_custom(text), reply_markup=markup)
+            except TelegramBadRequest:
+                pass
         await cb.answer()
 
     @router.callback_query(F.data.startswith("m:"))
