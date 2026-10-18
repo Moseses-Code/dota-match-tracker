@@ -224,9 +224,10 @@ tbody tr + tr td { border-top: 1px solid var(--line); }
 const params = new URLSearchParams(location.search);
 const ACCOUNT = parseInt(params.get("id") || "", 10) || null;
 const DEMO = !ACCOUNT;
-// OpenDota — через посредника на том же сайте (worker.js): из части сетей api.opendota.com недоступен.
-// Если страница открыта не с Cloudflare (локально, в предпросмотре) — напрямую.
-const OD = location.hostname.endsWith(".workers.dev") || location.hostname.endsWith(".pages.dev") ? "/api" : "https://api.opendota.com/api";
+// OpenDota: сначала напрямую (у каждого устройства свой дневной лимит запросов), а если напрямую
+// не отвечает — через посредника на том же сайте (worker.js; у его адресов лимит бывает исчерпан).
+const DIRECT = "https://api.opendota.com/api";
+const PROXY = location.hostname.endsWith(".workers.dev") || location.hostname.endsWith(".pages.dev") ? "/api" : null;
 const CDN = "https://cdn.cloudflare.steamstatic.com";
 const DAYS = 30;
 
@@ -258,20 +259,33 @@ const res = w => `<span class="res ${w ? "w" : "l"}">${w ? "WIN" : "LOSS"}</span
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} } };
 
-const TIMEOUT = 20000;   // OpenDota иногда долго думает; дольше не ждём, а показываем ошибку
+let source = store.get("od-source") === "proxy" && PROXY ? PROXY : DIRECT;   // какой путь сработал в прошлый раз
+async function tryFetch(base, path, timeout) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const r = await fetch(base + path, { signal: ctl.signal });
+    if (r.ok) return { data: await r.json() };
+    if (r.status === 404) return { data: null };
+    const body = await r.json().catch(() => ({}));
+    return { error: /limit/i.test(body.error || "") ? "дневной лимит запросов исчерпан"
+      : r.status === 429 ? "слишком много запросов" : "ошибка " + r.status };
+  } catch (e) {
+    return { error: e.name === "AbortError" ? `не ответил за ${timeout / 1000} с` : "нет связи" };
+  } finally { clearTimeout(timer); }
+}
 async function od(path) {
-  let status = "нет ответа";
-  for (let i = 0; i < 2; i++) {
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), TIMEOUT);
-    const r = await fetch(OD + path, { signal: ctl.signal }).catch(e => { status = e.name === "AbortError" ? "не ответил за 20 с" : "нет связи"; return null; });
-    clearTimeout(timer);
-    if (r && r.status === 429) { status = "слишком много запросов"; await new Promise(ok => setTimeout(ok, 3000)); continue; }
-    if (r && r.ok) return r.json();
-    if (r && r.status === 404) return null;
-    if (r) status = "ошибка " + r.status;
-    await new Promise(ok => setTimeout(ok, 800));
+  const order = [source, ...[DIRECT, PROXY].filter(b => b && b !== source)];
+  const errors = [];
+  for (const base of order) {
+    // первый путь ждём недолго, чтобы быстрее переключиться на запасной
+    const res = await tryFetch(base, path, base === order[0] && order.length > 1 ? 8000 : 20000);
+    if (!res.error) {
+      if (base !== source) { source = base; store.set("od-source", base === PROXY ? "proxy" : "direct"); }
+      return res.data;
+    }
+    errors.push(`${base === PROXY ? "через Cloudflare" : "напрямую"}: ${res.error}`);
   }
-  throw new Error(`OpenDota ${status} (${path.split("?")[0]})`);
+  throw new Error(`OpenDota не отвечает (${errors.join("; ")})`);
 }
 // константы игры кэшируются в браузере на 3 дня
 async function constant(name) {
