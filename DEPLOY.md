@@ -62,6 +62,8 @@ MMR_STEP=25
 
 Мини-приложение — статичная страница `webapp/index.html`, данные она берёт из OpenDota сама.
 Ей нужен адрес с HTTPS — его бесплатно даёт Cloudflare. Настройки выкладки лежат в `wrangler.jsonc`.
+Запросы к OpenDota идут через посредника `worker.js` на том же адресе (`/api/…`): из части сетей
+api.opendota.com недоступен напрямую, а Cloudflare доступен; ответы он ещё и кэширует.
 
 1. Зарегистрируйся на https://dash.cloudflare.com (карта не нужна).
 2. **Workers & Pages** → **Create** → **Import a repository** (подключи GitHub) → `dota-match-tracker`.

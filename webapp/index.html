@@ -224,7 +224,9 @@ tbody tr + tr td { border-top: 1px solid var(--line); }
 const params = new URLSearchParams(location.search);
 const ACCOUNT = parseInt(params.get("id") || "", 10) || null;
 const DEMO = !ACCOUNT;
-const OD = "https://api.opendota.com/api";
+// OpenDota — через посредника на том же сайте (worker.js): из части сетей api.opendota.com недоступен.
+// Если страница открыта не с Cloudflare (локально, в предпросмотре) — напрямую.
+const OD = location.hostname.endsWith(".workers.dev") || location.hostname.endsWith(".pages.dev") ? "/api" : "https://api.opendota.com/api";
 const CDN = "https://cdn.cloudflare.steamstatic.com";
 const DAYS = 30;
 
