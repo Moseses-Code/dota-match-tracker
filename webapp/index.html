@@ -196,13 +196,13 @@ tbody tr + tr td { border-top: 1px solid var(--line); }
 
 <header class="wrap hero-head">
   <div class="who">
-    <div class="avatar" id="avatar" aria-hidden="true">M</div>
+    <div class="avatar" id="avatar" aria-hidden="true"></div>
     <div style="min-width:0">
-      <h1 id="nick">Moseses</h1>
+      <h1 id="nick">Загружаю…</h1>
       <div class="rank">
-        <span class="medal"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 15.6 6.6 18.5l1.2-6L3.3 8.3l6.1-.7z"/></svg><span id="medal">Властелин III</span></span>
-        <span class="muted" id="mmr">≈4 234 MMR</span>
-        <span class="sample" id="sample">пример данных</span>
+        <span class="medal"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 15.6 6.6 18.5l1.2-6L3.3 8.3l6.1-.7z"/></svg><span id="medal">—</span></span>
+        <span class="muted" id="mmr"></span>
+        <span class="sample" id="sample" hidden>пример данных</span>
       </div>
     </div>
   </div>
@@ -255,15 +255,20 @@ const res = w => `<span class="res ${w ? "w" : "l"}">${w ? "WIN" : "LOSS"}</span
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} } };
 
+const TIMEOUT = 20000;   // OpenDota иногда долго думает; дольше не ждём, а показываем ошибку
 async function od(path) {
-  for (let i = 0; i < 3; i++) {
-    const r = await fetch(OD + path).catch(() => null);
-    if (r && r.status === 429) { await new Promise(ok => setTimeout(ok, 2000 * (i + 1))); continue; }
+  let status = "нет ответа";
+  for (let i = 0; i < 2; i++) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), TIMEOUT);
+    const r = await fetch(OD + path, { signal: ctl.signal }).catch(e => { status = e.name === "AbortError" ? "не ответил за 20 с" : "нет связи"; return null; });
+    clearTimeout(timer);
+    if (r && r.status === 429) { status = "слишком много запросов"; await new Promise(ok => setTimeout(ok, 3000)); continue; }
     if (r && r.ok) return r.json();
     if (r && r.status === 404) return null;
+    if (r) status = "ошибка " + r.status;
     await new Promise(ok => setTimeout(ok, 800));
   }
-  throw new Error("OpenDota не отвечает");
+  throw new Error(`OpenDota ${status} (${path.split("?")[0]})`);
 }
 // константы игры кэшируются в браузере на 3 дня
 async function constant(name) {
@@ -292,12 +297,11 @@ function roughPos(m) {
 }
 
 async function loadReal() {
-  const [heroes, player, list, peers] = await Promise.all([
+  const [heroes, player, list] = await Promise.all([
     constant("heroes"), od(`/players/${ACCOUNT}`),
     od(`/players/${ACCOUNT}/matches?date=${DAYS}&project=hero_id&project=kills&project=deaths&project=assists` +
        `&project=duration&project=player_slot&project=radiant_win&project=start_time&project=lobby_type` +
        `&project=gold_per_min&project=xp_per_min&project=last_hits&project=lane_role&project=game_mode`),
-    od(`/players/${ACCOUNT}/peers?date=${DAYS}`),
   ]);
   Object.assign(HERO, heroes);
   const prof = (player || {}).profile || {};
@@ -310,15 +314,24 @@ async function loadReal() {
       end: r.start_time + r.duration, ranked: r.lobby_type === 7 };
     m.pos = roughPos(m); return m;
   });
-  const monthAgo = now() - DAYS * 86400;
-  const friends = (peers || []).filter(p => p.with_games && p.last_played >= monthAgo)
-    .sort((a, b) => b.with_games - a.with_games).slice(0, 5)
-    .map(p => ({ name: p.personaname || String(p.account_id), avatar: p.avatarfull, games: p.with_games, wins: p.with_win || 0, last: p.last_played }));
   return {
     profile: { name: prof.personaname || `ID ${ACCOUNT}`, avatar: prof.avatarfull, tier: player?.rank_tier, lb: player?.leaderboard_rank,
       mmr: mmrParam || estimateMmr(player?.rank_tier), approx: !mmrParam || params.get("approx") === "1", private: !prof.personaname && !matches.length },
-    matches, friends,
+    matches, friends: null,   // друзья грузятся отдельно — OpenDota отвечает на этот запрос дольше всего
   };
+}
+
+async function loadFriends() {
+  try {
+    const peers = await od(`/players/${ACCOUNT}/peers?date=${DAYS}`);
+    const monthAgo = now() - DAYS * 86400;
+    DATA.friends = (peers || []).filter(p => p.with_games && p.last_played >= monthAgo)
+      .sort((a, b) => b.with_games - a.with_games).slice(0, 5)
+      .map(p => ({ name: p.personaname || String(p.account_id), avatar: p.avatarfull, games: p.with_games, wins: p.with_win || 0, last: p.last_played }));
+  } catch (err) {
+    DATA.friends = { error: err.message };
+  }
+  if (current === "friends") render();
 }
 
 function loadDemo() {
@@ -568,6 +581,8 @@ const VIEWS = {
       </section>`;
   },
   friends() {
+    if (!DATA.friends) return `<div class="skel"></div>`;
+    if (DATA.friends.error) return empty(`Не получилось загрузить друзей: ${esc(DATA.friends.error)}.<button class="btn" data-retry-friends="1">Повторить</button>`);
     if (!DATA.friends.length) return empty("За последний месяц игр с друзьями не нашёл.<br>Учитываются только игроки с открытой историей матчей.");
     return `<section class="card">
       <div class="card-head"><h2>Друзья за месяц</h2><span class="muted" style="font-size:12px">игры в одной команде</span></div>
@@ -590,6 +605,7 @@ $("#view").addEventListener("click", e => {
   const go = e.target.closest("[data-go]"); if (go) return goTab(go.dataset.go);
   const s = e.target.closest("[data-sort]"); if (s) { state.heroSort = s.dataset.sort; return render(); }
   const r = e.target.closest("[data-retry]"); if (r) return start();
+  if (e.target.closest("[data-retry-friends]")) { DATA.friends = null; render(); return loadFriends(); }
   const m = e.target.closest("[data-match]"); if (m) openMatch(+m.dataset.match);
 });
 
@@ -727,6 +743,7 @@ async function start() {
       return;
     }
     render();
+    if (!DEMO) loadFriends();
   } catch (err) {
     $("#view").innerHTML = `<section class="card"><div class="state">Не получилось загрузить статистику: ${esc(err.message)}.<button class="btn" data-retry="1">Повторить</button></div></section>`;
   }
