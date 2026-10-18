@@ -13,7 +13,7 @@ import handlers
 import service
 from custom_packs import Packs
 from api import Api
-from config import BOT_TOKEN
+from config import BOT_TOKEN, WEBAPP_URL
 from db import DB
 from tracker import run_tracker
 
@@ -28,6 +28,15 @@ COMMANDS = [
     BotCommand(command="help", description="Помощь"),
     BotCommand(command="unlink", description="Отвязать аккаунт"),
 ]
+
+
+async def webapp_buttons(bot: Bot, db: DB):
+    """Кнопка «Статистика» у всех активных пользователей (ссылка у каждого своя)."""
+    if not WEBAPP_URL:
+        return
+    for c in await db.active_chats():
+        await service.update_webapp_button(bot, await db.get_user(c["tg_id"]))
+        await asyncio.sleep(0.05)
 
 
 async def main():
@@ -52,10 +61,12 @@ async def main():
     await service.PACKS.load()
     prewarm = asyncio.create_task(service.PACKS.prewarm())
     tracker = asyncio.create_task(run_tracker(bot, api, db))
+    buttons = asyncio.create_task(webapp_buttons(bot, db))
     try:
         await dp.start_polling(bot)
     finally:
         tracker.cancel()
+        buttons.cancel()
         prewarm.cancel()
         await api.close()
         await db.close()

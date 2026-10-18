@@ -5,14 +5,14 @@ from html import unescape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
 
 from analysis import (apply_stratz_bans, apply_stratz_positions, estimate_mmr, mmr_to_rank_tier, parse_match,
                       rank_tier_range)
 from api import Api
 from averages import get_averages
 from buttons import BLUE, ib
-from config import MMR_STEP
+from config import MMR_STEP, WEBAPP_URL
 from db import DB
 from details import build_details
 from draft_image import build_draft_image
@@ -110,6 +110,26 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
     html = build_report(m, me, avg, mmr, api)
     png = await build_draft_image(m, me.account_id, api)
     return png, html, short_caption(m, me), m.match_id
+
+
+def webapp_url(user) -> str | None:
+    """Ссылка на мини-приложение: Dota ID и MMR (если указан) — в параметрах."""
+    if not WEBAPP_URL:
+        return None
+    url = f"{WEBAPP_URL}/?id={user['account_id']}"
+    return url + (f"&mmr={user['mmr']}" if user["mmr"] else "")
+
+
+async def update_webapp_button(bot: Bot, user):
+    """Кнопка «Статистика» у поля ввода (своя ссылка у каждого пользователя)."""
+    url = webapp_url(user)
+    if not url:
+        return
+    try:
+        await bot.set_chat_menu_button(chat_id=user["chat_id"],
+                                       menu_button=MenuButtonWebApp(text="Статистика", web_app=WebAppInfo(url=url)))
+    except TelegramBadRequest as e:
+        log.warning("menu button for %s: %s", user["tg_id"], e)
 
 
 async def send_report(bot: Bot, chat_id: int, png: bytes, html: str, caption: str, match_id: int):

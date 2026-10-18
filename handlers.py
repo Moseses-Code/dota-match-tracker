@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, WebAppInfo
 
 from admin import BTN_ADMIN, is_owner
 from analysis import estimate_mmr, mmr_to_rank_tier, rank_name
@@ -20,7 +20,7 @@ from config import MMR_STEP, OWNER_ID
 from db import DB
 from emoji import e, hero_e, rank_e, strip_custom
 from report import ago, fmt_time, plural
-from service import make_details, make_report, send_report
+from service import make_details, make_report, send_report, update_webapp_button, webapp_url
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -125,6 +125,7 @@ def setup(api: Api, db: DB):
         user = await db.get_user(msg.from_user.id)
         if user:
             await remember_username(user, msg)
+            await update_webapp_button(msg.bot, user)
             await answer_menu(msg, f"{e('wave')} С возвращением, <b>{escape(user['persona'] or '')}</b>!\n"
                                    "Я слежу за твоими играми и пришлю отчёт после каждой.")
             return
@@ -197,6 +198,7 @@ def setup(api: Api, db: DB):
         await db.upsert_user(cb.from_user.id, cb.message.chat.id, data["account_id"], data["persona"],
                              data["last"], data["last_played"], data["rank_tier"])
         await db.set_username(cb.from_user.id, cb.from_user.username)
+        await update_webapp_button(cb.bot, await db.get_user(cb.from_user.id))
         await state.clear()
         await answer_menu(
             cb.message,
@@ -457,11 +459,14 @@ def setup(api: Api, db: DB):
                              f" — {games} игр · {wins / max(games, 1) * 100:.0f}%")
         lines += ["", f"ID: <code>{acc}</code>"]
         text = "\n".join(lines)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
+        rows = [[
             ib("OpenDota", url=f"https://www.opendota.com/players/{acc}"),
             ib("STRATZ", url=f"https://stratz.com/players/{acc}"),
             ib("Dotabuff", url=f"https://www.dotabuff.com/players/{acc}"),
-        ]])
+        ]]
+        if url := webapp_url(user):
+            rows.insert(0, [ib("Открыть статистику", "more", GREEN, web_app=WebAppInfo(url=url))])
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
         if st.get("avatar"):
             try:
                 await msg.answer_photo(st["avatar"], caption=text, reply_markup=kb)
@@ -481,6 +486,7 @@ def setup(api: Api, db: DB):
             return
         tier = mmr_to_rank_tier(int(arg))
         await db.update_user(user["tg_id"], mmr=int(arg), rank_tier=tier)
+        await update_webapp_button(msg.bot, await db.get_user(user["tg_id"]))
         await msg.answer(f"{e('ok')} Запомнил: <b>{arg}</b> MMR — это {rank_e(tier)} <b>{rank_name(tier)}</b>.\n"
                          f"Дальше буду считать ±{MMR_STEP} за рейтинговую игру "
                          "(это приблизительно — Valve не отдаёт точное изменение). "

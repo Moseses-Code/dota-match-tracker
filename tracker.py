@@ -9,7 +9,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from api import Api, ApiError
 from config import PARSE_WAIT_MIN, POLL_ACTIVE, POLL_IDLE
 from db import DB
-from service import make_report, send_report
+from service import make_report, send_report, update_webapp_button
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ async def process_pending(bot: Bot, api: Api, db: DB):
                 png, html, caption, mid = res
                 await send_report(bot, user["chat_id"], png, html, caption, mid)
                 await db.mark_sent(p["match_id"], p["tg_id"])
+                await update_webapp_button(bot, await db.get_user(p["tg_id"]))   # MMR в ссылке обновился
         except TelegramForbiddenError:
             log.info("user %s blocked the bot", user["tg_id"])
             await db.update_user(user["tg_id"], active=0)
