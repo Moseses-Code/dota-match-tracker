@@ -227,7 +227,8 @@ const DEMO = !ACCOUNT;
 // OpenDota: сначала напрямую (у каждого устройства свой дневной лимит запросов), а если напрямую
 // не отвечает — через посредника на том же сайте (worker.js; у его адресов лимит бывает исчерпан).
 const DIRECT = "https://api.opendota.com/api";
-const PROXY = location.hostname.endsWith(".workers.dev") || location.hostname.endsWith(".pages.dev") ? "/api" : null;
+// посредник есть там, где страницу отдаёт сервер бота (webserver.py) или Cloudflare (worker.js)
+const PROXY = location.protocol === "https:" && !location.hostname.endsWith("claude.ai") ? "/api" : null;
 const CDN = "https://cdn.cloudflare.steamstatic.com";
 const DAYS = 30;
 
