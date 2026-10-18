@@ -87,7 +87,7 @@ def setup(api: Api, db: DB):
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="🔎 Где найти Dota ID?", callback_data="howid")]])
         await msg.answer(
-            f"{e('win')} <b>Dota 2 Match Tracker</b>\n\n"
+            f"{e('crown')} <b>Dota 2 Match Tracker</b>\n\n"
             "После каждой игры пришлю отчёт с драфтом и статистикой — "
             "в сравнении со средним по твоему рангу.\n\n"
             f"{e('kda')} KDA   {e('gpm')} GPM   {e('xpm')} XPM   {e('nw')} NW\n\n"
