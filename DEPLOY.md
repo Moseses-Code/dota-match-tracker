@@ -58,23 +58,19 @@ MMR_STEP=25
 - Раз в **4 дня** зайди в панель и нажми продление сервера, иначе его остановят.
 - Обновить бота: запушить код в GitHub и перезапустить сервер (Auto Update сделает `git pull`).
 
-## 7. Мини-приложение «Статистика» (Cloudflare Pages, бесплатно)
+## 7. Мини-приложение «Статистика» (Cloudflare, бесплатно)
 
 Мини-приложение — статичная страница `webapp/index.html`, данные она берёт из OpenDota сама.
-Ей нужен адрес с HTTPS — его бесплатно даёт Cloudflare Pages.
+Ей нужен адрес с HTTPS — его бесплатно даёт Cloudflare. Настройки выкладки лежат в `wrangler.jsonc`.
 
 1. Зарегистрируйся на https://dash.cloudflare.com (карта не нужна).
-2. **Workers & Pages** → **Create** → вкладка **Pages** → **Connect to Git**.
-3. Подключи GitHub и выбери репозиторий `dota-match-tracker` (приватный подходит).
-4. Настройки сборки:
-   - **Production branch**: `main`
-   - **Framework preset**: `None`
-   - **Build command**: оставить пустым
-   - **Build output directory**: `webapp`
-5. **Save and Deploy**. Через минуту появится адрес вида `https://dota-match-tracker.pages.dev` —
+2. **Workers & Pages** → **Create** → **Import a repository** (подключи GitHub) → `dota-match-tracker`.
+3. На экране «Set up your application» оставь всё как есть:
+   - **Build command**: пусто
+   - **Deploy command**: `npx wrangler deploy`
+4. **Deploy**. Через минуту появится адрес вида `https://dota-match-tracker.<имя>.workers.dev` —
    открой его в браузере: должна показаться статистика на примерных данных.
-6. Впиши адрес в `.env` бота: `WEBAPP_URL=https://dota-match-tracker.pages.dev` и перезапусти бота.
+5. Впиши адрес в `.env` бота: `WEBAPP_URL=https://dota-match-tracker.<имя>.workers.dev` и перезапусти бота.
 
 После этого у всех пользователей появится кнопка **«Статистика»** слева от поля ввода, а в профиле —
 кнопка «Открыть статистику». При каждом пуше в `main` Cloudflare сам обновляет страницу.
-
