@@ -53,11 +53,11 @@ DEFAULTS = {
     "lane": ("🌿", "5449850741667668411"),
     "timing": ("⏳", "5451732530048802485"),
     "streak": ("🔥", "5420315771991497307"),
-    "death": ("💀", "5370971163310693562"),
+    "death": ("🛡", "5409008750893734809"),
     "friends": ("🥳", "5370870691140737817"),
     "games": ("🎮", "5467583879948803288"),
     "victory": ("🏆", "5409008750893734809"),
-    "winrate": ("📈", "5373001317042101552"),
+    "winrate": ("🏆", "5409008750893734809"),
     "last": ("📊", "5431577498364158238"),
     "history": ("⏳", "5451732530048802485"),
     "profile": ("🎮", "5467583879948803288"),
@@ -76,11 +76,11 @@ THEMED = {
     "lane": "item:tango",               # линия
     "timing": "item:black_king_bar",    # тайминги предметов
     "streak": "item:bloodstone",        # серии убийств
-    "death": "item:cheese",             # смерти и выкупы
-    "friends": "item:pipe",             # друзья — командный предмет
+    "death": "item:aegis",              # смерти и выкупы — Aegis
+    "friends": "item:manta",            # друзья — Manta Style (иллюзии-копии)
     "games": "item:tpscroll",
     "victory": "item:aegis",
-    "winrate": "item:ultimate_scepter",
+    "winrate": "item:aegis",
     # кнопки
     "last": "item:tpscroll",
     "history": "item:travel_boots",
