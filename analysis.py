@@ -41,6 +41,30 @@ def mmr_to_rank_tier(mmr: int | None) -> int | None:
     return (medal + 1) * 10 + min(5, rest // 154 + 1)
 
 
+def rank_tier_range(rank_tier: int | None) -> tuple[int, int | None] | None:
+    """Диапазон MMR для медали со звёздами (обратное к mmr_to_rank_tier); у Титана верха нет."""
+    if not rank_tier:
+        return None
+    medal, stars = divmod(int(rank_tier), 10)
+    stars = min(max(stars, 1), 5)
+    if medal >= 8:
+        return 5620, None
+    if medal == 7:
+        lo = 4620 + (stars - 1) * 200
+        return lo, lo + 199
+    lo = (medal - 1) * 770 + (stars - 1) * 154
+    return lo, (medal * 770 - 1 if stars == 5 else lo + 153)
+
+
+def estimate_mmr(rank_tier: int | None) -> int | None:
+    """Примерный MMR по медали — середина диапазона звезды."""
+    rng = rank_tier_range(rank_tier)
+    if not rng:
+        return None
+    lo, hi = rng
+    return lo if hi is None else (lo + hi) // 2
+
+
 def bracket_of(rank_tier: int | None) -> str | None:
     """Ранг -> базовый брекет STRATZ."""
     if not rank_tier:
@@ -230,3 +254,25 @@ async def apply_stratz_positions(m: Match, api: Api):
         if pos and pos.startswith("POSITION_"):
             p.position = int(pos[-1])
             p.position_exact = True
+
+
+async def apply_stratz_bans(m: Match, api: Api):
+    """Дополняет баны из STRATZ: в All Pick OpenDota присылает не все."""
+    if not api.has_stratz:
+        return
+    try:
+        data = await api.stratz(
+            f"{{ match(id: {m.match_id}) {{ pickBans {{ heroId isPick isRadiant wasBannedSuccessfully }} }} }}"
+        )
+    except ApiError as e:
+        log.info("STRATZ bans: %s", e)
+        return
+    picked = {p.hero_id for p in m.players}
+    for pb in ((data or {}).get("match") or {}).get("pickBans") or []:
+        hid = pb.get("heroId")
+        # в All Pick предложенный бан может не пройти — такие пропускаем
+        if pb.get("isPick") or not hid or pb.get("wasBannedSuccessfully") is False or hid in picked:
+            continue
+        team = m.bans.setdefault(bool(pb.get("isRadiant")), [])
+        if hid not in m.bans.get(True, []) + m.bans.get(False, []):
+            team.append(hid)

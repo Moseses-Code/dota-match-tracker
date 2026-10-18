@@ -47,7 +47,7 @@ DEFAULTS = {
     "sad": ("😭", "5370646412243510708"),
 }
 
-_override: dict[str, str] = {}
+_override: dict[str, list[str]] = {}
 # динамические иконки (hero:74, item:blink, rank:65) -> custom_emoji_id; заполняет custom_packs
 dynamic: dict[str, str] = {}
 
@@ -56,7 +56,9 @@ def load():
     global _override
     if EMOJI_FILE.exists():
         data = json.loads(EMOJI_FILE.read_text("utf-8"))
-        _override = {k: str(v) for k, v in data.items() if v and not k.startswith("_")}
+        # значение — один ID или список ID (слово из нескольких эмодзи, например WIN)
+        _override = {k: [str(x) for x in (v if isinstance(v, list) else [v])]
+                     for k, v in data.items() if v and not k.startswith("_")}
 
 
 def tg(cid: str | None, char: str) -> str:
@@ -65,7 +67,16 @@ def tg(cid: str | None, char: str) -> str:
 
 def e(key: str) -> str:
     char, cid = DEFAULTS.get(key, ("•", None))
-    return tg(_override.get(key) or dynamic.get(f"ui:{key}") or cid, char)
+    if key in _override:
+        return "".join(tg(x, char) for x in _override[key])
+    return tg(dynamic.get(f"ui:{key}") or cid, char)
+
+
+def icon(key: str) -> str | None:
+    """custom_emoji_id для иконки кнопки (первый, если значок из нескольких эмодзи)."""
+    if key in _override:
+        return _override[key][0]
+    return dynamic.get(f"ui:{key}") or DEFAULTS.get(key, ("", None))[1]
 
 
 def hero_e(hero_id: int) -> str:
@@ -83,8 +94,10 @@ def rank_e(rank_tier: int | None) -> str:
 
 
 def strip_custom(html: str) -> str:
-    """Убирает премиум-эмодзи, оставляя обычные (на случай, если Telegram их не принял)."""
-    return re.sub(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>', r"\1", html)
+    """Убирает премиум-эмодзи, оставляя обычные (на случай, если Telegram их не принял).
+    Значок из нескольких эмодзи подряд (WIN) превращается в один обычный."""
+    return re.sub(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>(?:<tg-emoji emoji-id="\d+">\1</tg-emoji>)*',
+                  r"\1", html)
 
 
 load()

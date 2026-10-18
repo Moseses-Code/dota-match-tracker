@@ -5,13 +5,16 @@ from html import unescape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup
 
-from analysis import apply_stratz_positions, mmr_to_rank_tier, parse_match
+from analysis import (apply_stratz_bans, apply_stratz_positions, estimate_mmr, mmr_to_rank_tier, parse_match,
+                      rank_tier_range)
 from api import Api
 from averages import get_averages
+from buttons import BLUE, ib
 from config import MMR_STEP
 from db import DB
+from details import build_details
 from draft_image import build_draft_image
 from emoji import strip_custom
 from report import MmrInfo, build_report, short_caption
@@ -24,10 +27,47 @@ PACKS = None
 
 def match_keyboard(match_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
-        InlineKeyboardButton(text="STRATZ", url=f"https://stratz.com/matches/{match_id}"),
-        InlineKeyboardButton(text="Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
-    ]])
+        ib("OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
+        ib("STRATZ", url=f"https://stratz.com/matches/{match_id}"),
+        ib("Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
+    ], [ib("Подробнее", "stats", BLUE, callback_data=f"more:{match_id}")]])
+
+
+async def _load(api: Api, data: dict, user, player_slot: int | None = None):
+    """Матч с позициями и банами + сам игрок (или None, если его нет в матче)."""
+    m = parse_match(data, api)
+    await apply_stratz_positions(m, api)
+    await apply_stratz_bans(m, api)
+    me = m.find(user["account_id"])
+    if me is None and player_slot is not None:   # если матчи скрыты, account_id может не прийти
+        me = next((p for p in m.players if p.slot == player_slot), None)
+    if me is not None:
+        me.account_id = user["account_id"]
+    return m, me
+
+
+async def make_details(api: Api, user, match_id: int):
+    """Подробная статистика: (png, caption), "unparsed" — матч ещё не разобран, None — нет игрока."""
+    data = await api.match(match_id)
+    if not data:
+        return None
+    if not data.get("version"):
+        await api.request_parse(match_id)
+        return "unparsed"
+    m, me = await _load(api, data, user)
+    if me is None:
+        return None
+    return await build_details(data, m, me, api)
+
+
+def fit_to_medal(mmr: int, rank_tier: int | None) -> int:
+    """Самокорректировка: шаг ±25 приблизительный, и счёт бота может уйти от реальной медали.
+    Если ушёл — подтягиваем MMR к ближайшей границе диапазона медали из матча."""
+    rng = rank_tier_range(rank_tier)
+    if not rng:
+        return mmr
+    lo, hi = rng
+    return max(lo, mmr if hi is None else min(mmr, hi))
 
 
 async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | None = None,
@@ -36,15 +76,9 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
     data = data or await api.match(match_id)
     if not data:
         return None
-    m = parse_match(data, api)
-    await apply_stratz_positions(m, api)
-
-    me = m.find(user["account_id"])
-    if me is None and player_slot is not None:   # если матчи скрыты, account_id может не прийти
-        me = next((p for p in m.players if p.slot == player_slot), None)
+    m, me = await _load(api, data, user, player_slot)
     if me is None:
         return None
-    me.account_id = user["account_id"]
 
     # MMR: если игрок указал свой MMR — ведём счёт и ранг считаем по нему
     mmr = MmrInfo(ranked=m.is_ranked, old_rank=user["rank_tier"])
@@ -53,6 +87,8 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         mmr.delta = MMR_STEP if won else -MMR_STEP
     if user["mmr"]:
         mmr.current = user["mmr"] + (mmr.delta if (count_mmr and mmr.delta) else 0)
+        if count_mmr:
+            mmr.current = fit_to_medal(mmr.current, me.rank_tier)
         new_rank = mmr_to_rank_tier(mmr.current)
         mmr.old_rank = mmr_to_rank_tier(user["mmr"])
     else:
@@ -60,9 +96,11 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         profile = {} if me.rank_tier else (await api.player(user["account_id"]) or {})
         new_rank = me.rank_tier or profile.get("rank_tier")
         mmr.leaderboard = profile.get("leaderboard_rank")
+        mmr.current, mmr.approx = estimate_mmr(new_rank), True
     mmr.new_rank = new_rank
     if count_mmr:
-        await db.update_user(user["tg_id"], rank_tier=new_rank, mmr=mmr.current or user["mmr"])
+        await db.update_user(user["tg_id"], rank_tier=new_rank,
+                             mmr=user["mmr"] if mmr.approx else mmr.current)
     else:
         mmr.old_rank = None   # для ручного запроса изменение ранга не показываем
 

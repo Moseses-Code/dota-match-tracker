@@ -1,6 +1,7 @@
 """Команды бота: регистрация, профиль, отчёты."""
 import logging
 import re
+import time
 from html import escape
 from urllib.parse import quote
 
@@ -9,31 +10,62 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-                           Message, ReplyKeyboardMarkup)
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
 
-from analysis import mmr_to_rank_tier, rank_name
+from analysis import estimate_mmr, mmr_to_rank_tier, rank_name
 from api import Api, ApiError
+from buttons import BLUE, GREEN, RED, ib, rb
 from config import MMR_STEP, OWNER_ID
 from db import DB
-from emoji import e, hero_e, rank_e
-from service import make_report, send_report
+from emoji import e, hero_e, rank_e, strip_custom
+from report import fmt_time
+from service import make_details, make_report, send_report
 
 log = logging.getLogger(__name__)
 router = Router()
 
 STEAM64_BASE = 76561197960265728
 
-BTN_LAST = "📊 Последний матч"
-BTN_PROFILE = "👤 Профиль"
-BTN_SHARE = "📨 Позвать друга"
-BTN_HELP = "❓ Помощь"
+# у кнопок меню иконки — премиум-эмодзи, поэтому в тексте эмодзи нет
+BTN_LAST = "Последний матч"
+BTN_HISTORY = "Мои матчи"
+BTN_PROFILE = "Профиль"
+BTN_FRIENDS = "Друзья"
+BTN_SHARE = "Позвать друга"
+BTN_HELP = "Помощь"
+# тексты старого меню: у кого оно ещё открыто, кнопки должны работать
+OLD_BTN = {"📊 Последний матч": BTN_LAST, "👤 Профиль": BTN_PROFILE,
+           "📨 Позвать друга": BTN_SHARE, "❓ Помощь": BTN_HELP}
 SHARE_TEXT = "Бот присылает подробную статистику после каждой игры в Dota 2"
+HISTORY_PAGE = 10
 
 MENU = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text=BTN_LAST), KeyboardButton(text=BTN_PROFILE)],
-    [KeyboardButton(text=BTN_SHARE), KeyboardButton(text=BTN_HELP)],
+    [rb(BTN_LAST, "stats", GREEN)],
+    [rb(BTN_HISTORY, "time"), rb(BTN_FRIENDS, "party")],
+    [rb(BTN_PROFILE, "hero"), rb(BTN_SHARE, "link")],
+    [rb(BTN_HELP, "warn")],
 ], resize_keyboard=True)
+
+
+def btn(name: str):
+    """Фильтр кнопки меню — и новый текст, и старый."""
+    return F.text.in_({name} | {old for old, new in OLD_BTN.items() if new == name})
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    return few if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else many
+
+
+def ago(ts: int) -> str:
+    sec = max(0, int(time.time()) - int(ts or 0))
+    if sec < 3600:
+        return f"{max(1, sec // 60)} мин назад"
+    if sec < 86400:
+        return f"{sec // 3600} ч назад"
+    days = sec // 86400
+    return "вчера" if days == 1 else f"{days} дн назад"
 
 
 class Reg(StatesGroup):
@@ -66,6 +98,7 @@ def help_text() -> str:
         f"в сравнении со средним по твоему рангу и финальный билд.\n\n"
         "<b>Команды</b>\n"
         "/last — последний матч · /match <code>ID</code> — любой матч\n"
+        "/history — мои матчи · /friends — с кем играл за месяц\n"
         "/profile — профиль · /mmr <code>2400</code> — указать MMR\n"
         "/invite — позвать друга · /unlink — отвязать аккаунт\n\n"
         f"{e('warn')} В Dota 2 должна быть включена <b>«Общедоступная история матчей»</b>.\n\n"
@@ -85,9 +118,9 @@ def setup(api: Api, db: DB):
             return
         await state.set_state(Reg.waiting_id)
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🔎 Где найти Dota ID?", callback_data="howid")]])
+            ib("Где найти Dota ID?", "matches", BLUE, callback_data="howid")]])
         await msg.answer(
-            f"{e('win')} <b>Dota 2 Match Tracker</b>\n\n"
+            f"{e('crown')} <b>Dota 2 Match Tracker</b>\n\n"
             "После каждой игры пришлю отчёт с драфтом и статистикой — "
             "в сравнении со средним по твоему рангу.\n\n"
             f"{e('kda')} KDA   {e('gpm')} GPM   {e('xpm')} XPM   {e('nw')} NW\n\n"
@@ -129,8 +162,8 @@ def setup(api: Api, db: DB):
         note = "" if recent else (f"\n\n{e('warn')} Матчей не видно — включи в Dota 2 "
                                   "<b>«Общедоступная история матчей»</b>.")
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Да, это я", callback_data="reg:yes"),
-            InlineKeyboardButton(text="❌ Нет", callback_data="reg:no"),
+            ib("Да, это я", "ok", GREEN, callback_data="reg:yes"),
+            ib("Нет", style=RED, callback_data="reg:no"),
         ]])
         await wait.delete()
         caption = (f"Это ты?\n\n<b>{escape(profile.get('personaname') or '?')}</b>\n"
@@ -160,7 +193,7 @@ def setup(api: Api, db: DB):
         )
         if data["last"]:
             kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="📊 Показать последний матч", callback_data="last")]])
+                ib("Показать последний матч", "stats", GREEN, callback_data="last")]])
             await cb.message.answer("Хочешь посмотреть отчёт о последней игре?", reply_markup=kb)
         await cb.answer()
 
@@ -197,11 +230,149 @@ def setup(api: Api, db: DB):
         if user:
             await send_last(bot, cb.message.chat.id, user)
 
+    @router.callback_query(F.data.startswith("more:"))
+    async def more_cb(cb: CallbackQuery, bot: Bot):
+        await cb.answer()
+        user = await db.get_user(cb.from_user.id)
+        if not user:
+            return
+        match_id = int(cb.data.split(":")[1])
+        chat_id = cb.message.chat.id
+        await bot.send_chat_action(chat_id, "upload_photo")
+        try:
+            res = await make_details(api, user, match_id)
+        except ApiError:
+            await bot.send_message(chat_id, f"{e('warn')} OpenDota не отвечает, попробуй позже.")
+            return
+        if res == "unparsed":
+            await bot.send_message(chat_id, f"{e('warn')} Подробная статистика появится после разбора матча — "
+                                            "попробуй через несколько минут.")
+        elif not res:
+            await bot.send_message(chat_id, f"{e('warn')} Не нашёл тебя в матче <code>{match_id}</code>.")
+        else:
+            png, caption = res
+            await bot.send_photo(chat_id, BufferedInputFile(png, filename=f"details_{match_id}.png"),
+                                 caption=caption)
+
     @router.message(Command("last"))
-    @router.message(F.text == BTN_LAST)
+    @router.message(btn(BTN_LAST))
     async def last_cmd(msg: Message, bot: Bot):
         if user := await need_user(msg):
             await send_last(bot, msg.chat.id, user)
+
+    async def history_page(user, offset: int):
+        """Список матчей текстом (WIN/LOSS — премиум-эмодзи, в кнопку их не вставить)
+        и под ним цветные кнопки с номерами матчей."""
+        acc = user["account_id"]
+        rows = await api.match_history(acc, HISTORY_PAGE + 1, offset)
+        has_next = len(rows) > HISTORY_PAGE
+        rows = rows[:HISTORY_PAGE]
+        items = []   # (match_id, строка, победа: True/False/None)
+        if offset == 0:   # свежие матчи, которые OpenDota ещё не показывает в истории
+            top = rows[0]["match_id"] if rows else 0
+            try:
+                fresh = [r for r in await api.latest_matches(acc) if r["match_id"] > top]
+            except ApiError:
+                fresh = []
+            for r in fresh:
+                end = (r.get("start_time") or 0) + (r.get("duration") or 0)
+                items.append((r["match_id"], f"{e('fire')} Новый матч · {fmt_time(r.get('duration') or 0)}"
+                                             f" · {ago(end)}", None))
+        for r in rows:
+            hid = r.get("hero_id")
+            hero = escape(api.heroes.get(hid, {}).get("localized_name", f"#{hid}"))
+            won = None if r.get("radiant_win") is None else (r.get("player_slot", 0) < 128) == r["radiant_win"]
+            result = e("same") if won is None else e("win" if won else "lose")
+            end = (r.get("start_time") or 0) + (r.get("duration") or 0)
+            items.append((r["match_id"], f"{result} {hero_e(hid)} {hero} · "
+                                         f"{r.get('kills', 0)}/{r.get('deaths', 0)}/{r.get('assists', 0)}"
+                                         f" · {fmt_time(r.get('duration') or 0)} · {ago(end)}", won))
+        if not items:
+            return f"{e('warn')} Не вижу твоих матчей. Проверь, что история матчей открыта.", None
+
+        lines = [f"{e('matches')} <b>Мои матчи</b> · {offset + 1}–{offset + len(rows)}", ""]
+        lines += [f"<b>{i}.</b> {text}" for i, (_, text, _) in enumerate(items, 1)]
+        lines += ["", "<i>Нажми на номер, чтобы посмотреть отчёт.</i>"]
+        numbers = [ib(str(i), style=None if won is None else (GREEN if won else RED), callback_data=f"m:{mid}")
+                   for i, (mid, _, won) in enumerate(items, 1)]
+        buttons = [numbers[i:i + 5] for i in range(0, len(numbers), 5)]
+        nav = []
+        if offset > 0:
+            nav.append(ib("◀️ Новее", callback_data=f"hist:{max(0, offset - HISTORY_PAGE)}"))
+        if has_next:
+            nav.append(ib("Старее ▶️", callback_data=f"hist:{offset + HISTORY_PAGE}"))
+        if nav:
+            buttons.append(nav)
+        return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @router.message(Command("history"))
+    @router.message(btn(BTN_HISTORY))
+    async def history_cmd(msg: Message):
+        user = await need_user(msg)
+        if not user:
+            return
+        try:
+            text, markup = await history_page(user, 0)
+        except ApiError:
+            await msg.answer(f"{e('warn')} OpenDota не отвечает, попробуй позже.")
+            return
+        try:
+            await msg.answer(text, reply_markup=markup)
+        except TelegramBadRequest:   # премиум-эмодзи не приняты — шлём с обычными
+            await msg.answer(strip_custom(text), reply_markup=markup)
+
+    @router.callback_query(F.data.startswith("hist:"))
+    async def history_cb(cb: CallbackQuery):
+        user = await db.get_user(cb.from_user.id)
+        if not user:
+            return await cb.answer()
+        try:
+            text, markup = await history_page(user, int(cb.data.split(":")[1]))
+        except ApiError:
+            return await cb.answer("OpenDota не отвечает, попробуй позже.", show_alert=True)
+        try:
+            await cb.message.edit_text(text, reply_markup=markup)
+        except TelegramBadRequest:
+            try:
+                await cb.message.edit_text(strip_custom(text), reply_markup=markup)
+            except TelegramBadRequest:
+                pass
+        await cb.answer()
+
+    @router.callback_query(F.data.startswith("m:"))
+    async def history_match_cb(cb: CallbackQuery, bot: Bot):
+        await cb.answer()
+        user = await db.get_user(cb.from_user.id)
+        if user:
+            await bot.send_chat_action(cb.message.chat.id, "upload_photo")
+            await report_for(bot, cb.message.chat.id, user, int(cb.data.split(":")[1]))
+
+    @router.message(Command("friends"))
+    @router.message(btn(BTN_FRIENDS))
+    async def friends_cmd(msg: Message):
+        user = await need_user(msg)
+        if not user:
+            return
+        try:
+            peers = await api.peers(user["account_id"], days=30)
+        except ApiError:
+            await msg.answer(f"{e('warn')} OpenDota не отвечает, попробуй позже.")
+            return
+        month_ago = time.time() - 30 * 86400
+        friends = sorted((p for p in peers if p.get("with_games") and (p.get("last_played") or 0) >= month_ago),
+                         key=lambda p: p["with_games"], reverse=True)[:5]
+        if not friends:
+            await msg.answer(f"{e('party')} За последний месяц не нашёл игр с друзьями.\n"
+                             "<i>Учитываются только игроки с открытой историей матчей.</i>")
+            return
+        lines = [f"{e('party')} <b>С кем играл за месяц</b>", ""]
+        for i, p in enumerate(friends, 1):
+            games, wins = p["with_games"], p.get("with_win") or 0
+            lines.append(f"{i}. <b>{escape(p.get('personaname') or str(p.get('account_id')))}</b> — "
+                         f"{games} {plural(games, 'игра', 'игры', 'игр')} вместе · "
+                         f"побед {wins} ({wins / games * 100:.0f}%) · {ago(p.get('last_played'))}")
+        lines += ["", "<i>Игры в одной команде за 30 дней; у друзей должна быть открыта история матчей.</i>"]
+        await msg.answer("\n".join(lines))
 
     @router.message(Command("match"))
     async def match_cmd(msg: Message, command: CommandObject, bot: Bot):
@@ -215,7 +386,7 @@ def setup(api: Api, db: DB):
         await report_for(bot, msg.chat.id, user, int(command.args.strip()))
 
     @router.message(Command("profile"))
-    @router.message(F.text == BTN_PROFILE)
+    @router.message(btn(BTN_PROFILE))
     async def profile_cmd(msg: Message, bot: Bot):
         user = await need_user(msg)
         if not user:
@@ -228,9 +399,12 @@ def setup(api: Api, db: DB):
             st = {}
         name = st.get("name") or user["persona"] or "?"
         tier = mmr_to_rank_tier(user["mmr"]) if user["mmr"] else user["rank_tier"]
+        approx = estimate_mmr(tier)
         lines = [f"{e('hero')} <b>{escape(name)}</b>",
                  f"{rank_e(tier)} <b>{rank_name(tier)}</b>"
-                 + (f" · {user['mmr']} MMR" if user["mmr"] else " · <i>MMR не указан (/mmr)</i>")]
+                 + (f" · {user['mmr']} MMR" if user["mmr"] else
+                    (f" · ≈{approx} MMR\n<i>MMR примерный, по медали. Укажи точный: /mmr 4200</i>" if approx
+                     else " · <i>MMR не указан (/mmr)</i>"))]
         if st.get("matches"):
             wr = st["wins"] / st["matches"] * 100
             lines.append(f"{e('matches')} Матчей: <b>{st['matches']:,}</b>".replace(",", " ")
@@ -244,9 +418,9 @@ def setup(api: Api, db: DB):
         lines += ["", f"ID: <code>{acc}</code>"]
         text = "\n".join(lines)
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="OpenDota", url=f"https://www.opendota.com/players/{acc}"),
-            InlineKeyboardButton(text="STRATZ", url=f"https://stratz.com/players/{acc}"),
-            InlineKeyboardButton(text="Dotabuff", url=f"https://www.dotabuff.com/players/{acc}"),
+            ib("OpenDota", url=f"https://www.opendota.com/players/{acc}"),
+            ib("STRATZ", url=f"https://stratz.com/players/{acc}"),
+            ib("Dotabuff", url=f"https://www.dotabuff.com/players/{acc}"),
         ]])
         if st.get("avatar"):
             try:
@@ -277,8 +451,8 @@ def setup(api: Api, db: DB):
         if not await need_user(msg):
             return
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Да, отвязать", callback_data="unlink:yes"),
-            InlineKeyboardButton(text="Отмена", callback_data="unlink:no"),
+            ib("Да, отвязать", style=RED, callback_data="unlink:yes"),
+            ib("Отмена", callback_data="unlink:no"),
         ]])
         await msg.answer("Отвязать аккаунт и перестать присылать отчёты?", reply_markup=kb)
 
@@ -290,30 +464,30 @@ def setup(api: Api, db: DB):
             await cb.message.answer("Аккаунт отвязан. Чтобы привязать снова — /start")
         await cb.answer()
 
-    @router.message(F.text == BTN_SHARE)
+    @router.message(btn(BTN_SHARE))
     @router.message(Command("invite"))
     async def share_cmd(msg: Message, bot: Bot):
         me = await bot.get_me()
         link = f"https://t.me/{me.username}"
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-            text="📨 Отправить другу",
+        markup = InlineKeyboardMarkup(inline_keyboard=[[ib(
+            "Отправить другу", "link", BLUE,
             url=f"https://t.me/share/url?url={quote(link)}&text={quote(SHARE_TEXT)}")]])
         await msg.answer(f"Ссылка на бота: {link}\nДруг нажимает /start и привязывает свой аккаунт.",
-                         reply_markup=kb)
+                         reply_markup=markup)
 
     @router.message(Command("help"))
-    @router.message(F.text == BTN_HELP)
+    @router.message(btn(BTN_HELP))
     async def help_cmd(msg: Message):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✉️ Написать владельцу бота", callback_data="fb")]])
-        await msg.answer(help_text(), reply_markup=kb)
+        markup = InlineKeyboardMarkup(inline_keyboard=[[
+            ib("Написать владельцу бота", "wave", BLUE, callback_data="fb")]])
+        await msg.answer(help_text(), reply_markup=markup)
 
     @router.callback_query(F.data == "fb")
     async def fb_start(cb: CallbackQuery, state: FSMContext):
         await state.set_state(Reg.waiting_feedback)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data="fb:cancel")]])
+        markup = InlineKeyboardMarkup(inline_keyboard=[[ib("Отмена", callback_data="fb:cancel")]])
         await cb.message.answer("✍️ Напиши сообщение — вопрос, идею или ошибку. Я передам его владельцу бота, "
-                                "он сможет ответить тебе прямо здесь.", reply_markup=kb)
+                                "он сможет ответить тебе прямо здесь.", reply_markup=markup)
         await cb.answer()
 
     @router.callback_query(F.data == "fb:cancel")

@@ -11,7 +11,8 @@ from emoji import e, hero_e, item_e, rank_e
 class MmrInfo:
     ranked: bool
     delta: int | None = None       # ±шаг
-    current: int | None = None     # если игрок указал свой MMR
+    current: int | None = None     # указанный игроком MMR (или примерный, см. approx)
+    approx: bool = False           # MMR не указан — оценка по медали
     old_rank: int | None = None
     new_rank: int | None = None
     leaderboard: int | None = None
@@ -94,7 +95,7 @@ def build_report(m: Match, me: Player, avg: dict | None, mmr: MmrInfo, api: Api)
     # ранг и MMR
     rank = f"{rank_e(mmr.new_rank)} <b>{rank_name(mmr.new_rank, mmr.leaderboard)}</b>"
     if mmr.current:
-        rank += f" · {fmt_num(mmr.current)} MMR"
+        rank += f" · {'≈' if mmr.approx else ''}{fmt_num(mmr.current)} MMR"
     if mmr.ranked and mmr.delta is not None:
         rank += f" <b>({'+' if mmr.delta > 0 else '−'}{abs(mmr.delta)})</b>"
     if mmr.old_rank and mmr.new_rank and mmr.old_rank != mmr.new_rank:
@@ -120,6 +121,8 @@ def build_report(m: Match, me: Player, avg: dict | None, mmr: MmrInfo, api: Api)
     else:
         legend = "<i>топ X% — среди игроков на этом герое</i>"
 
+    if mmr.approx:
+        rank += "\n<i>MMR примерный, по медали. Укажи точный: /mmr 4200</i>"
     return "\n".join([
         head, score, sub, "",
         hero, rank, "",
