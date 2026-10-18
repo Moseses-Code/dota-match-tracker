@@ -81,6 +81,15 @@ class Api:
     async def recent_matches(self, account_id):
         return await self.od(f"/players/{account_id}/recentMatches") or []
 
+    async def match_history(self, account_id, limit=10, offset=0) -> list[dict]:
+        """Матчи игрока, новые сверху: герой, K/D/A, длительность, результат."""
+        return await self.od(f"/players/{int(account_id)}/matches",
+                             params={"limit": limit, "offset": offset}) or []
+
+    async def peers(self, account_id, days=30) -> list[dict]:
+        """С кем игрок играл за последние `days` дней (только открытые профили)."""
+        return await self.od(f"/players/{int(account_id)}/peers", params={"date": days}) or []
+
     async def stratz_recent(self, account_id) -> list[dict]:
         """Последние матчи из STRATZ (видит открытую историю сразу, OpenDota — с задержкой)."""
         data = await self.stratz(

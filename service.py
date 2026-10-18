@@ -5,12 +5,13 @@ from html import unescape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup
 
 from analysis import (apply_stratz_bans, apply_stratz_positions, estimate_mmr, mmr_to_rank_tier, parse_match,
                       rank_tier_range)
 from api import Api
 from averages import get_averages
+from buttons import BLUE, ib
 from config import MMR_STEP
 from db import DB
 from details import build_details
@@ -26,10 +27,10 @@ PACKS = None
 
 def match_keyboard(match_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
-        InlineKeyboardButton(text="STRATZ", url=f"https://stratz.com/matches/{match_id}"),
-        InlineKeyboardButton(text="Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
-    ], [InlineKeyboardButton(text="📈 Подробнее", callback_data=f"more:{match_id}")]])
+        ib("OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
+        ib("STRATZ", url=f"https://stratz.com/matches/{match_id}"),
+        ib("Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
+    ], [ib("Подробнее", "stats", BLUE, callback_data=f"more:{match_id}")]])
 
 
 async def _load(api: Api, data: dict, user, player_slot: int | None = None):

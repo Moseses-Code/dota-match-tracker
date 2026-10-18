@@ -12,6 +12,9 @@ OPENDOTA_API_KEY = os.getenv("OPENDOTA_API_KEY", "")  # необязательн
 # Telegram ID владельца бота: ему принадлежат паки эмодзи героев/предметов/рангов
 OWNER_ID = int(os.getenv("OWNER_ID") or 0)
 
+# Иконки на кнопках (премиум-эмодзи); 0 — выключить
+BUTTON_ICONS = os.getenv("BUTTON_ICONS", "1") != "0"
+
 # Как часто проверять новые матчи (секунды)
 POLL_ACTIVE = int(os.getenv("POLL_ACTIVE", "180"))   # игрок недавно играл
 POLL_IDLE = int(os.getenv("POLL_IDLE", "600"))       # давно не играл
