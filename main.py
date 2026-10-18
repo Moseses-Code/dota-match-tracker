@@ -18,6 +18,8 @@ from tracker import run_tracker
 
 COMMANDS = [
     BotCommand(command="last", description="Отчёт о последнем матче"),
+    BotCommand(command="history", description="Мои матчи"),
+    BotCommand(command="friends", description="С кем играл за месяц"),
     BotCommand(command="match", description="Отчёт о матче по ID"),
     BotCommand(command="profile", description="Мой профиль"),
     BotCommand(command="mmr", description="Указать текущий MMR"),

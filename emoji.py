@@ -45,6 +45,49 @@ DEFAULTS = {
     "matches": ("👁", "5424892643760937442"),
     "party": ("🥳", "5370870691140737817"),
     "sad": ("😭", "5370646412243510708"),
+    # запасные эмодзи для тематических значков (THEMED)
+    "damage": ("⚔️", "5408935401442267103"),
+    "heal": ("💚", "5449505950283078474"),
+    "fights": ("🎯", "5350460637182993292"),
+    "wards": ("👁", "5424892643760937442"),
+    "lane": ("🌿", "5449850741667668411"),
+    "timing": ("⏳", "5451732530048802485"),
+    "streak": ("🔥", "5420315771991497307"),
+    "death": ("🛡", "5409008750893734809"),
+    "friends": ("🥳", "5370870691140737817"),
+    "games": ("🎮", "5467583879948803288"),
+    "victory": ("🏆", "5409008750893734809"),
+    "winrate": ("🏆", "5409008750893734809"),
+    "last": ("📊", "5431577498364158238"),
+    "history": ("⏳", "5451732530048802485"),
+    "profile": ("🎮", "5467583879948803288"),
+    "share": ("🔗", "5375129357373165375"),
+    "help": ("❗", "5467928559664242360"),
+    "more": ("📊", "5431577498364158238"),
+}
+
+# тематические значки: ключ -> иконка предмета Dota 2 из пака бота (custom_packs, emoji_map.json);
+# если иконки нет — обычный эмодзи из DEFAULTS
+THEMED = {
+    "damage": "item:greater_crit",      # урон — Daedalus
+    "heal": "item:guardian_greaves",    # лечение
+    "fights": "item:blink",             # драки
+    "wards": "item:ward_observer",
+    "lane": "item:tango",               # линия
+    "timing": "item:black_king_bar",    # тайминги предметов
+    "streak": "item:bloodstone",        # серии убийств
+    "death": "item:aegis",              # смерти и выкупы — Aegis
+    "friends": "item:manta",            # друзья — Manta Style (иллюзии-копии)
+    "games": "item:tpscroll",
+    "victory": "item:aegis",
+    "winrate": "item:aegis",
+    # кнопки
+    "last": "item:tpscroll",
+    "history": "item:travel_boots",
+    "profile": "item:aghanims_shard",
+    "share": "item:smoke_of_deceit",
+    "help": "item:clarity",
+    "more": "item:gem",
 }
 
 _override: dict[str, list[str]] = {}
@@ -65,18 +108,23 @@ def tg(cid: str | None, char: str) -> str:
     return f'<tg-emoji emoji-id="{cid}">{char}</tg-emoji>' if cid else char
 
 
-def e(key: str) -> str:
-    char, cid = DEFAULTS.get(key, ("•", None))
+def _ids(key: str) -> list[str]:
+    """ID эмодзи значка: emoji.json → иконка оформления → тематическая иконка предмета → стандартный."""
     if key in _override:
-        return "".join(tg(x, char) for x in _override[key])
-    return tg(dynamic.get(f"ui:{key}") or cid, char)
+        return _override[key]
+    cid = dynamic.get(f"ui:{key}") or dynamic.get(THEMED.get(key, "")) or DEFAULTS.get(key, ("", None))[1]
+    return [cid] if cid else []
+
+
+def e(key: str) -> str:
+    char = DEFAULTS.get(key, ("•", None))[0]
+    return "".join(tg(x, char) for x in _ids(key)) or char
 
 
 def icon(key: str) -> str | None:
     """custom_emoji_id для иконки кнопки (первый, если значок из нескольких эмодзи)."""
-    if key in _override:
-        return _override[key][0]
-    return dynamic.get(f"ui:{key}") or DEFAULTS.get(key, ("", None))[1]
+    ids = _ids(key)
+    return ids[0] if ids else None
 
 
 def hero_e(hero_id: int) -> str:

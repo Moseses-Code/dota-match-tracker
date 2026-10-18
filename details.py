@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw
 
 from analysis import POSITION_NAMES, Match, Player
 from api import Api
+from emoji import e, hero_e, item_e
 from draft_image import BG_BOTTOM, BG_TOP, CARD_BG, GOLD, MUTED, TEXT, ensure_font, font
 from report import fmt_num, fmt_time
 
@@ -56,10 +57,10 @@ def details_caption(data: dict, m: Match, me: Player, api: Api) -> str:
     mine = next((p for p in data.get("players", []) if p.get("player_slot") == me.slot), {})
     lines = []
     taken = sum((mine.get("damage_taken") or {}).values())
-    lines.append(f"⚔️ Урон по героям <b>{fmt_num(mine.get('hero_damage'))}</b>"
-                 f" · по строениям <b>{fmt_num(mine.get('tower_damage'))}</b>")
-    lines.append(f"💚 Лечение <b>{fmt_num(mine.get('hero_healing'))}</b>"
-                 + (f" · получено урона <b>{fmt_num(taken)}</b>" if taken else ""))
+    lines.append(f"{e('damage')} Урон по героям <b>{fmt_num(mine.get('hero_damage'))}</b>"
+                 f"  ·  по строениям <b>{fmt_num(mine.get('tower_damage'))}</b>")
+    lines.append(f"{e('heal')} Лечение <b>{fmt_num(mine.get('hero_healing'))}</b>"
+                 + (f"  ·  получено урона <b>{fmt_num(taken)}</b>" if taken else ""))
     fights = mine.get("teamfight_participation")
     stuns = mine.get("stuns")
     parts = []
@@ -68,40 +69,45 @@ def details_caption(data: dict, m: Match, me: Player, api: Api) -> str:
     if stuns:
         parts.append(f"оглушения <b>{stuns:.1f} с</b>")
     if parts:
-        text = " · ".join(parts)
-        lines.append("🤝 " + text[0].upper() + text[1:])
+        lines.append(f"{e('fights')} " + _cap("  ·  ".join(parts)))
     obs, sen, stacks = mine.get("obs_placed"), mine.get("sen_placed"), mine.get("camps_stacked")
     if obs is not None or sen is not None:
-        lines.append(f"👁 Варды <b>{obs or 0}</b> / сентри <b>{sen or 0}</b> · стаки <b>{stacks or 0}</b>")
+        lines.append(f"{e('wards')} Варды <b>{obs or 0}</b>  ·  сентри <b>{sen or 0}</b>  ·  стаки <b>{stacks or 0}</b>")
 
     # итог линии: золото на 10-й минуте против прямого оппонента
     opp = next((p for p in m.players if p.is_radiant != me.is_radiant and me.position
                 and p.position == OPPONENT.get(me.position)), None)
     if me.nw10 is not None and opp and opp.nw10 is not None:
         d = me.nw10 - opp.nw10
-        lines.append(f"🛣 Линия: NW 10' <b>{fmt_num(me.nw10)}</b> против <b>{fmt_num(opp.nw10)}</b>"
-                     f" ({escape(opp.hero_name)}) <b>{'+' if d >= 0 else '−'}{fmt_num(abs(d))}</b>")
+        lines.append(f"{e('lane')} Линия: NW 10' <b>{fmt_num(me.nw10)}</b> против "
+                     f"{hero_e(opp.hero_id)} <b>{fmt_num(opp.nw10)}</b>"
+                     f"  <b>{'▲' if d >= 0 else '▼'}{fmt_num(abs(d))}</b>")
 
     timings = _item_timings(mine, api)
     if timings:
-        lines.append("⏱ " + " · ".join(f"{escape(n)} {fmt_time(t)}" for n, t in timings))
+        lines.append(f"{e('timing')} " + "  ".join(f"{item_e(name) or escape(dname)} {fmt_time(t)}"
+                                                for name, dname, t in timings))
 
-    extra = []
     multi = {int(k): v for k, v in (mine.get("multi_kills") or {}).items() if int(k) >= 2}
     names = {2: "двойное", 3: "тройное", 4: "ультра", 5: "rampage"}
     if multi:
-        extra.append(", ".join(f"{names.get(k, f'{k}×')} ×{v}" for k, v in sorted(multi.items())))
+        lines.append(f"{e('streak')} " + _cap(", ".join(f"{names.get(k, f'{k}×')} ×{v}"
+                                                       for k, v in sorted(multi.items()))))
+    death = []
     if mine.get("life_state_dead"):
-        extra.append(f"в смерти {fmt_time(mine['life_state_dead'])}")
+        death.append(f"в смерти <b>{fmt_time(mine['life_state_dead'])}</b>")
     if mine.get("buyback_count"):
-        extra.append(f"выкупов {mine['buyback_count']}")
-    if extra:
-        text = " · ".join(extra)
-        lines.append("🔥 " + text[0].upper() + text[1:])
-    return "\n".join(lines)
+        death.append(f"выкупов <b>{mine['buyback_count']}</b>")
+    if death:
+        lines.append(f"{e('death')} " + _cap("  ·  ".join(death)))
+    return f"{e('more')} <b>Разбор матча</b>\n<blockquote>" + "\n".join(lines) + "</blockquote>"
 
 
-def _item_timings(raw: dict, api: Api, limit: int = 6) -> list[tuple[str, int]]:
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _item_timings(raw: dict, api: Api, limit: int = 6) -> list[tuple[str, str, int]]:
     """Первые покупки дорогих предметов из финального билда."""
     by_name = {it["name"]: it for it in api.items.values()}
     final = {api.items[i]["name"] for i in
@@ -114,7 +120,7 @@ def _item_timings(raw: dict, api: Api, limit: int = 6) -> list[tuple[str, int]]:
         if not it or key in seen or key not in final or t < 0 or it.get("cost", 0) < BIG_ITEM_COST:
             continue
         seen.add(key)
-        out.append((it["dname"], t))
+        out.append((key, it["dname"], t))
     return out[:limit]
 
 
