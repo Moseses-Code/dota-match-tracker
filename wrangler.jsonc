@@ -1,0 +1,6 @@
+// Cloudflare Workers: мини-приложение «Статистика» — статичные файлы из webapp/ (см. DEPLOY.md, шаг 7)
+{
+  "name": "dota-match-tracker",
+  "compatibility_date": "2025-06-01",
+  "assets": { "directory": "./webapp" }
+}
