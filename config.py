@@ -15,6 +15,9 @@ OWNER_ID = int(os.getenv("OWNER_ID") or 0)
 # Адрес мини-приложения со статистикой (webapp/ на Cloudflare Pages и т.п.); пусто — кнопки нет
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 
+# Порт веб-сервера мини-приложения (Bot-Hosting сам задаёт SERVER_PORT); 0 — не запускать
+WEB_PORT = int(os.getenv("WEB_PORT") or os.getenv("SERVER_PORT") or 0)
+
 # Иконки на кнопках (премиум-эмодзи); 0 — выключить
 BUTTON_ICONS = os.getenv("BUTTON_ICONS", "1") != "0"
 

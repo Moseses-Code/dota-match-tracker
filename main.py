@@ -13,9 +13,10 @@ import handlers
 import service
 from custom_packs import Packs
 from api import Api
-from config import BOT_TOKEN, WEBAPP_URL
+from config import BOT_TOKEN, WEB_PORT, WEBAPP_URL
 from db import DB
 from tracker import run_tracker
+from webserver import start_web
 
 COMMANDS = [
     BotCommand(command="last", description="Отчёт о последнем матче"),
@@ -60,6 +61,12 @@ async def main():
     service.PACKS = Packs(bot, api, db)
     await service.PACKS.load()
     prewarm = asyncio.create_task(service.PACKS.prewarm())
+    web = None
+    if WEB_PORT:   # мини-приложение по адресу сервера бота; без него бот работает как обычно
+        try:
+            web = await start_web(api, WEB_PORT)
+        except OSError as e:
+            logging.warning("webapp server not started on port %s: %s", WEB_PORT, e)
     tracker = asyncio.create_task(run_tracker(bot, api, db))
     buttons = asyncio.create_task(webapp_buttons(bot, db))
     try:
@@ -68,6 +75,8 @@ async def main():
         tracker.cancel()
         buttons.cancel()
         prewarm.cancel()
+        if web:
+            await web.cleanup()
         await api.close()
         await db.close()
         await bot.session.close()
