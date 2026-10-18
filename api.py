@@ -42,7 +42,7 @@ class Api:
         self.od_limit = RateLimiter(1.1)   # бесплатный OpenDota: 60 запросов/мин
         self.sz_limit = RateLimiter(0.3)
         self.heroes: dict[int, dict] = {}
-        self.items: dict[int, dict] = {}   # id -> {name, dname, img}
+        self.items: dict[int, dict] = {}   # id -> {name, dname, img, cost}
         self._refreshed: dict[int, float] = {}
 
     async def open(self):
@@ -168,7 +168,8 @@ class Api:
         self.items = {}
         for name, it in items.items():
             if "id" in it:
-                self.items[int(it["id"])] = {"name": name, "dname": it.get("dname") or name, "img": it.get("img")}
+                self.items[int(it["id"])] = {"name": name, "dname": it.get("dname") or name, "img": it.get("img"),
+                                            "cost": it.get("cost") or 0}
 
     async def _cached_json(self, filename, path, max_age=86400 * 3):
         f = CACHE_DIR / filename

@@ -9,15 +9,15 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-                           Message, ReplyKeyboardMarkup)
+from aiogram.types import (BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
+                           KeyboardButton, Message, ReplyKeyboardMarkup)
 
 from analysis import mmr_to_rank_tier, rank_name
 from api import Api, ApiError
 from config import MMR_STEP, OWNER_ID
 from db import DB
 from emoji import e, hero_e, rank_e
-from service import make_report, send_report
+from service import make_details, make_report, send_report
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -196,6 +196,30 @@ def setup(api: Api, db: DB):
         user = await db.get_user(cb.from_user.id)
         if user:
             await send_last(bot, cb.message.chat.id, user)
+
+    @router.callback_query(F.data.startswith("more:"))
+    async def more_cb(cb: CallbackQuery, bot: Bot):
+        await cb.answer()
+        user = await db.get_user(cb.from_user.id)
+        if not user:
+            return
+        match_id = int(cb.data.split(":")[1])
+        chat_id = cb.message.chat.id
+        await bot.send_chat_action(chat_id, "upload_photo")
+        try:
+            res = await make_details(api, user, match_id)
+        except ApiError:
+            await bot.send_message(chat_id, f"{e('warn')} OpenDota не отвечает, попробуй позже.")
+            return
+        if res == "unparsed":
+            await bot.send_message(chat_id, f"{e('warn')} Подробная статистика появится после разбора матча — "
+                                            "попробуй через несколько минут.")
+        elif not res:
+            await bot.send_message(chat_id, f"{e('warn')} Не нашёл тебя в матче <code>{match_id}</code>.")
+        else:
+            png, caption = res
+            await bot.send_photo(chat_id, BufferedInputFile(png, filename=f"details_{match_id}.png"),
+                                 caption=caption)
 
     @router.message(Command("last"))
     @router.message(F.text == BTN_LAST)

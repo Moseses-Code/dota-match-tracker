@@ -12,6 +12,7 @@ from api import Api
 from averages import get_averages
 from config import MMR_STEP
 from db import DB
+from details import build_details
 from draft_image import build_draft_image
 from emoji import strip_custom
 from report import MmrInfo, build_report, short_caption
@@ -27,7 +28,34 @@ def match_keyboard(match_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
         InlineKeyboardButton(text="STRATZ", url=f"https://stratz.com/matches/{match_id}"),
         InlineKeyboardButton(text="Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
-    ]])
+    ], [InlineKeyboardButton(text="📈 Подробнее", callback_data=f"more:{match_id}")]])
+
+
+async def _load(api: Api, data: dict, user, player_slot: int | None = None):
+    """Матч с позициями и банами + сам игрок (или None, если его нет в матче)."""
+    m = parse_match(data, api)
+    await apply_stratz_positions(m, api)
+    await apply_stratz_bans(m, api)
+    me = m.find(user["account_id"])
+    if me is None and player_slot is not None:   # если матчи скрыты, account_id может не прийти
+        me = next((p for p in m.players if p.slot == player_slot), None)
+    if me is not None:
+        me.account_id = user["account_id"]
+    return m, me
+
+
+async def make_details(api: Api, user, match_id: int):
+    """Подробная статистика: (png, caption), "unparsed" — матч ещё не разобран, None — нет игрока."""
+    data = await api.match(match_id)
+    if not data:
+        return None
+    if not data.get("version"):
+        await api.request_parse(match_id)
+        return "unparsed"
+    m, me = await _load(api, data, user)
+    if me is None:
+        return None
+    return await build_details(data, m, me, api)
 
 
 async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | None = None,
@@ -36,16 +64,9 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
     data = data or await api.match(match_id)
     if not data:
         return None
-    m = parse_match(data, api)
-    await apply_stratz_positions(m, api)
-    await apply_stratz_bans(m, api)
-
-    me = m.find(user["account_id"])
-    if me is None and player_slot is not None:   # если матчи скрыты, account_id может не прийти
-        me = next((p for p in m.players if p.slot == player_slot), None)
+    m, me = await _load(api, data, user, player_slot)
     if me is None:
         return None
-    me.account_id = user["account_id"]
 
     # MMR: если игрок указал свой MMR — ведём счёт и ранг считаем по нему
     mmr = MmrInfo(ranked=m.is_ranked, old_rank=user["rank_tier"])
