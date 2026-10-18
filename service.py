@@ -7,7 +7,8 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
-from analysis import apply_stratz_bans, apply_stratz_positions, mmr_to_rank_tier, parse_match
+from analysis import (apply_stratz_bans, apply_stratz_positions, estimate_mmr, mmr_to_rank_tier, parse_match,
+                      rank_tier_range)
 from api import Api
 from averages import get_averages
 from config import MMR_STEP
@@ -58,6 +59,16 @@ async def make_details(api: Api, user, match_id: int):
     return await build_details(data, m, me, api)
 
 
+def fit_to_medal(mmr: int, rank_tier: int | None) -> int:
+    """Самокорректировка: шаг ±25 приблизительный, и счёт бота может уйти от реальной медали.
+    Если ушёл — подтягиваем MMR к ближайшей границе диапазона медали из матча."""
+    rng = rank_tier_range(rank_tier)
+    if not rng:
+        return mmr
+    lo, hi = rng
+    return max(lo, mmr if hi is None else min(mmr, hi))
+
+
 async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | None = None,
                       data: dict | None = None, count_mmr: bool = True):
     """Возвращает (png, html) или None, если игрока нет в матче."""
@@ -75,6 +86,8 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         mmr.delta = MMR_STEP if won else -MMR_STEP
     if user["mmr"]:
         mmr.current = user["mmr"] + (mmr.delta if (count_mmr and mmr.delta) else 0)
+        if count_mmr:
+            mmr.current = fit_to_medal(mmr.current, me.rank_tier)
         new_rank = mmr_to_rank_tier(mmr.current)
         mmr.old_rank = mmr_to_rank_tier(user["mmr"])
     else:
@@ -82,9 +95,11 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         profile = {} if me.rank_tier else (await api.player(user["account_id"]) or {})
         new_rank = me.rank_tier or profile.get("rank_tier")
         mmr.leaderboard = profile.get("leaderboard_rank")
+        mmr.current, mmr.approx = estimate_mmr(new_rank), True
     mmr.new_rank = new_rank
     if count_mmr:
-        await db.update_user(user["tg_id"], rank_tier=new_rank, mmr=mmr.current or user["mmr"])
+        await db.update_user(user["tg_id"], rank_tier=new_rank,
+                             mmr=user["mmr"] if mmr.approx else mmr.current)
     else:
         mmr.old_rank = None   # для ручного запроса изменение ранга не показываем
 

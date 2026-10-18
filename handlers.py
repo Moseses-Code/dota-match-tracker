@@ -12,7 +12,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
                            KeyboardButton, Message, ReplyKeyboardMarkup)
 
-from analysis import mmr_to_rank_tier, rank_name
+from analysis import estimate_mmr, mmr_to_rank_tier, rank_name
 from api import Api, ApiError
 from config import MMR_STEP, OWNER_ID
 from db import DB
@@ -252,9 +252,12 @@ def setup(api: Api, db: DB):
             st = {}
         name = st.get("name") or user["persona"] or "?"
         tier = mmr_to_rank_tier(user["mmr"]) if user["mmr"] else user["rank_tier"]
+        approx = estimate_mmr(tier)
         lines = [f"{e('hero')} <b>{escape(name)}</b>",
                  f"{rank_e(tier)} <b>{rank_name(tier)}</b>"
-                 + (f" · {user['mmr']} MMR" if user["mmr"] else " · <i>MMR не указан (/mmr)</i>")]
+                 + (f" · {user['mmr']} MMR" if user["mmr"] else
+                    (f" · ≈{approx} MMR\n<i>MMR примерный, по медали. Укажи точный: /mmr 4200</i>" if approx
+                     else " · <i>MMR не указан (/mmr)</i>"))]
         if st.get("matches"):
             wr = st["wins"] / st["matches"] * 100
             lines.append(f"{e('matches')} Матчей: <b>{st['matches']:,}</b>".replace(",", " ")

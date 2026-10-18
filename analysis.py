@@ -41,6 +41,30 @@ def mmr_to_rank_tier(mmr: int | None) -> int | None:
     return (medal + 1) * 10 + min(5, rest // 154 + 1)
 
 
+def rank_tier_range(rank_tier: int | None) -> tuple[int, int | None] | None:
+    """Диапазон MMR для медали со звёздами (обратное к mmr_to_rank_tier); у Титана верха нет."""
+    if not rank_tier:
+        return None
+    medal, stars = divmod(int(rank_tier), 10)
+    stars = min(max(stars, 1), 5)
+    if medal >= 8:
+        return 5620, None
+    if medal == 7:
+        lo = 4620 + (stars - 1) * 200
+        return lo, lo + 199
+    lo = (medal - 1) * 770 + (stars - 1) * 154
+    return lo, (medal * 770 - 1 if stars == 5 else lo + 153)
+
+
+def estimate_mmr(rank_tier: int | None) -> int | None:
+    """Примерный MMR по медали — середина диапазона звезды."""
+    rng = rank_tier_range(rank_tier)
+    if not rng:
+        return None
+    lo, hi = rng
+    return lo if hi is None else (lo + hi) // 2
+
+
 def bracket_of(rank_tier: int | None) -> str | None:
     """Ранг -> базовый брекет STRATZ."""
     if not rank_tier:
