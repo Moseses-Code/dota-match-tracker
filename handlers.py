@@ -39,12 +39,22 @@ OLD_BTN = {"📊 Последний матч": BTN_LAST, "👤 Профиль": 
 SHARE_TEXT = "Бот присылает подробную статистику после каждой игры в Dota 2"
 HISTORY_PAGE = 10
 
-MENU = ReplyKeyboardMarkup(keyboard=[
-    [rb(BTN_LAST, "stats", GREEN)],
-    [rb(BTN_HISTORY, "time"), rb(BTN_FRIENDS, "party")],
-    [rb(BTN_PROFILE, "hero"), rb(BTN_SHARE, "link")],
-    [rb(BTN_HELP, "warn")],
-], resize_keyboard=True)
+MENU_ROWS = [[(BTN_LAST, "stats", GREEN)],
+             [(BTN_HISTORY, "time", None), (BTN_FRIENDS, "party", None)],
+             [(BTN_PROFILE, "hero", None), (BTN_SHARE, "link", None)],
+             [(BTN_HELP, "warn", None)]]
+MENU = ReplyKeyboardMarkup(keyboard=[[rb(*b) for b in row] for row in MENU_ROWS], resize_keyboard=True)
+# запасное меню без иконок и цвета — если Telegram не примет оформление
+MENU_PLAIN = ReplyKeyboardMarkup(keyboard=[[rb(b[0]) for b in row] for row in MENU_ROWS], resize_keyboard=True)
+
+
+async def answer_menu(msg: Message, text: str):
+    """Ответ с нижним меню; если Telegram не принял иконки/цвет — с простым меню."""
+    try:
+        await msg.answer(text, reply_markup=MENU)
+    except TelegramBadRequest as err:
+        log.warning("menu rejected (%s), sending plain menu", err)
+        await msg.answer(text, reply_markup=MENU_PLAIN)
 
 
 def btn(name: str):
@@ -113,8 +123,8 @@ def setup(api: Api, db: DB):
         log.info("/start from tg_id=%s (@%s)", msg.from_user.id, msg.from_user.username)
         user = await db.get_user(msg.from_user.id)
         if user:
-            await msg.answer(f"{e('wave')} С возвращением, <b>{escape(user['persona'] or '')}</b>!\n"
-                             "Я слежу за твоими играми и пришлю отчёт после каждой.", reply_markup=MENU)
+            await answer_menu(msg, f"{e('wave')} С возвращением, <b>{escape(user['persona'] or '')}</b>!\n"
+                                   "Я слежу за твоими играми и пришлю отчёт после каждой.")
             return
         await state.set_state(Reg.waiting_id)
         kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -185,11 +195,11 @@ def setup(api: Api, db: DB):
         await db.upsert_user(cb.from_user.id, cb.message.chat.id, data["account_id"], data["persona"],
                              data["last"], data["last_played"], data["rank_tier"])
         await state.clear()
-        await cb.message.answer(
+        await answer_menu(
+            cb.message,
             f"{e('ok')} <b>Готово!</b> Теперь я слежу за твоими играми — отчёт придёт через "
             "несколько минут после окончания матча.\n\n"
             "Совет: укажи текущий MMR командой /mmr <code>4200</code>, и я буду считать изменения.",
-            reply_markup=MENU,
         )
         if data["last"]:
             kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -201,7 +211,14 @@ def setup(api: Api, db: DB):
         user = await db.get_user(msg.from_user.id)
         if not user:
             await msg.answer("Сначала привяжи аккаунт: /start")
+        else:
+            await refresh_menu(msg)
         return user
+
+    async def refresh_menu(msg: Message):
+        """Нажата кнопка старого меню — присылаем новое (Telegram держит клавиатуру, пока не придёт другая)."""
+        if msg.text in OLD_BTN:
+            await answer_menu(msg, f"{e('ok')} Меню обновлено: добавились «Мои матчи» и «Друзья» 👇")
 
     async def report_for(bot: Bot, chat_id: int, user, match_id: int, slot=None):
         try:
@@ -467,6 +484,7 @@ def setup(api: Api, db: DB):
     @router.message(btn(BTN_SHARE))
     @router.message(Command("invite"))
     async def share_cmd(msg: Message, bot: Bot):
+        await refresh_menu(msg)
         me = await bot.get_me()
         link = f"https://t.me/{me.username}"
         markup = InlineKeyboardMarkup(inline_keyboard=[[ib(
@@ -478,6 +496,7 @@ def setup(api: Api, db: DB):
     @router.message(Command("help"))
     @router.message(btn(BTN_HELP))
     async def help_cmd(msg: Message):
+        await refresh_menu(msg)
         markup = InlineKeyboardMarkup(inline_keyboard=[[
             ib("Написать владельцу бота", "wave", BLUE, callback_data="fb")]])
         await msg.answer(help_text(), reply_markup=markup)
@@ -546,7 +565,7 @@ def setup(api: Api, db: DB):
     @router.message(F.text)
     async def fallback(msg: Message):
         if await db.get_user(msg.from_user.id):
-            await msg.answer("Не знаю такой команды. /help — список команд.", reply_markup=MENU)
+            await answer_menu(msg, "Не знаю такой команды. /help — список команд.")
         else:
             await msg.answer("Нажми /start, чтобы привязать аккаунт.")
 
