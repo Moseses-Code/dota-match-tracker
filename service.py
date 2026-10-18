@@ -7,7 +7,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
-from analysis import apply_stratz_positions, mmr_to_rank_tier, parse_match
+from analysis import apply_stratz_bans, apply_stratz_positions, mmr_to_rank_tier, parse_match
 from api import Api
 from averages import get_averages
 from config import MMR_STEP
@@ -38,6 +38,7 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         return None
     m = parse_match(data, api)
     await apply_stratz_positions(m, api)
+    await apply_stratz_bans(m, api)
 
     me = m.find(user["account_id"])
     if me is None and player_slot is not None:   # если матчи скрыты, account_id может не прийти

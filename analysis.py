@@ -230,3 +230,25 @@ async def apply_stratz_positions(m: Match, api: Api):
         if pos and pos.startswith("POSITION_"):
             p.position = int(pos[-1])
             p.position_exact = True
+
+
+async def apply_stratz_bans(m: Match, api: Api):
+    """Дополняет баны из STRATZ: в All Pick OpenDota присылает не все."""
+    if not api.has_stratz:
+        return
+    try:
+        data = await api.stratz(
+            f"{{ match(id: {m.match_id}) {{ pickBans {{ heroId isPick isRadiant wasBannedSuccessfully }} }} }}"
+        )
+    except ApiError as e:
+        log.info("STRATZ bans: %s", e)
+        return
+    picked = {p.hero_id for p in m.players}
+    for pb in ((data or {}).get("match") or {}).get("pickBans") or []:
+        hid = pb.get("heroId")
+        # в All Pick предложенный бан может не пройти — такие пропускаем
+        if pb.get("isPick") or not hid or pb.get("wasBannedSuccessfully") is False or hid in picked:
+            continue
+        team = m.bans.setdefault(bool(pb.get("isRadiant")), [])
+        if hid not in m.bans.get(True, []) + m.bans.get(False, []):
+            team.append(hid)
