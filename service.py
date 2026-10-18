@@ -30,7 +30,7 @@ def match_keyboard(match_id: int) -> InlineKeyboardMarkup:
         ib("OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
         ib("STRATZ", url=f"https://stratz.com/matches/{match_id}"),
         ib("Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
-    ], [ib("Подробнее", "stats", BLUE, callback_data=f"more:{match_id}")]])
+    ], [ib("Подробнее", "more", BLUE, callback_data=f"more:{match_id}")]])
 
 
 async def _load(api: Api, data: dict, user, player_slot: int | None = None):
