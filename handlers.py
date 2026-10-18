@@ -10,16 +10,17 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, WebAppInfo
 
+from admin import BTN_ADMIN, is_owner
 from analysis import estimate_mmr, mmr_to_rank_tier, rank_name
 from api import Api, ApiError
 from buttons import BLUE, GREEN, RED, ib, rb
 from config import MMR_STEP, OWNER_ID
 from db import DB
 from emoji import e, hero_e, rank_e, strip_custom
-from report import fmt_time
-from service import make_details, make_report, send_report
+from report import ago, fmt_time, plural
+from service import make_details, make_report, send_report, update_webapp_button, webapp_url
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -45,20 +46,22 @@ MENU_ROWS = [[(BTN_LAST, "last", GREEN)],
              [(BTN_HELP, "help", None)]]
 
 
-def menu(plain: bool = False) -> ReplyKeyboardMarkup:
+def menu(plain: bool = False, owner: bool = False) -> ReplyKeyboardMarkup:
     """Нижнее меню. Собирается при отправке: иконки предметов загружаются после старта бота.
-    plain — без иконок и цвета, если Telegram не примет оформление."""
-    rows = [[rb(text) if plain else rb(text, key, style) for text, key, style in row] for row in MENU_ROWS]
+    plain — без иконок и цвета, если Telegram не примет оформление; owner — с кнопкой админки."""
+    layout = MENU_ROWS + ([[(BTN_ADMIN, "admin", None)]] if owner else [])
+    rows = [[rb(text) if plain else rb(text, key, style) for text, key, style in row] for row in layout]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 async def answer_menu(msg: Message, text: str):
     """Ответ с нижним меню; если Telegram не принял иконки/цвет — с простым меню."""
+    owner = is_owner(msg.chat.id)
     try:
-        await msg.answer(text, reply_markup=menu())
+        await msg.answer(text, reply_markup=menu(owner=owner))
     except TelegramBadRequest as err:
         log.warning("menu rejected (%s), sending plain menu", err)
-        await msg.answer(text, reply_markup=menu(plain=True))
+        await msg.answer(text, reply_markup=menu(plain=True, owner=owner))
 
 
 def btn(name: str):
@@ -66,25 +69,12 @@ def btn(name: str):
     return F.text.in_({name} | {old for old, new in OLD_BTN.items() if new == name})
 
 
-def plural(n: int, one: str, few: str, many: str) -> str:
-    if n % 10 == 1 and n % 100 != 11:
-        return one
-    return few if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else many
-
-
 def winrate_bar(pct: float, size: int = 10) -> str:
     filled = round(pct / 100 * size)
     return "▰" * filled + "▱" * (size - filled)
 
 
-def ago(ts: int) -> str:
-    sec = max(0, int(time.time()) - int(ts or 0))
-    if sec < 3600:
-        return f"{max(1, sec // 60)} мин назад"
-    if sec < 86400:
-        return f"{sec // 3600} ч назад"
-    days = sec // 86400
-    return "вчера" if days == 1 else f"{days} дн назад"
+
 
 
 class Reg(StatesGroup):
@@ -121,6 +111,8 @@ def help_text() -> str:
         "/profile — профиль · /mmr <code>2400</code> — указать MMR\n"
         "/invite — позвать друга · /unlink — отвязать аккаунт\n\n"
         f"{e('warn')} В Dota 2 должна быть включена <b>«Общедоступная история матчей»</b>.\n\n"
+        "<i>Бот хранит твой Telegram и Dota ID, ник и историю отправленных отчётов — только для работы бота. "
+        "Удалить данные: /unlink.</i>\n\n"
         "Есть вопрос или идея? Жми кнопку ниже 👇"
     )
 
@@ -132,6 +124,8 @@ def setup(api: Api, db: DB):
         log.info("/start from tg_id=%s (@%s)", msg.from_user.id, msg.from_user.username)
         user = await db.get_user(msg.from_user.id)
         if user:
+            await remember_username(user, msg)
+            await update_webapp_button(msg.bot, user)
             await answer_menu(msg, f"{e('wave')} С возвращением, <b>{escape(user['persona'] or '')}</b>!\n"
                                    "Я слежу за твоими играми и пришлю отчёт после каждой.")
             return
@@ -203,6 +197,8 @@ def setup(api: Api, db: DB):
             return await cb.answer()
         await db.upsert_user(cb.from_user.id, cb.message.chat.id, data["account_id"], data["persona"],
                              data["last"], data["last_played"], data["rank_tier"])
+        await db.set_username(cb.from_user.id, cb.from_user.username)
+        await update_webapp_button(cb.bot, await db.get_user(cb.from_user.id))
         await state.clear()
         await answer_menu(
             cb.message,
@@ -221,8 +217,14 @@ def setup(api: Api, db: DB):
         if not user:
             await msg.answer("Сначала привяжи аккаунт: /start")
         else:
+            await remember_username(user, msg)
             await refresh_menu(msg)
         return user
+
+    async def remember_username(user, msg: Message):
+        """@ник для админки; Telegram позволяет его менять, поэтому обновляем при обращении."""
+        if user["username"] != msg.from_user.username:
+            await db.set_username(user["tg_id"], msg.from_user.username)
 
     async def refresh_menu(msg: Message):
         """Нажата кнопка старого меню — присылаем новое (Telegram держит клавиатуру, пока не придёт другая)."""
@@ -457,11 +459,14 @@ def setup(api: Api, db: DB):
                              f" — {games} игр · {wins / max(games, 1) * 100:.0f}%")
         lines += ["", f"ID: <code>{acc}</code>"]
         text = "\n".join(lines)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
+        rows = [[
             ib("OpenDota", url=f"https://www.opendota.com/players/{acc}"),
             ib("STRATZ", url=f"https://stratz.com/players/{acc}"),
             ib("Dotabuff", url=f"https://www.dotabuff.com/players/{acc}"),
-        ]])
+        ]]
+        if url := webapp_url(user):
+            rows.insert(0, [ib("Открыть статистику", "more", GREEN, web_app=WebAppInfo(url=url))])
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
         if st.get("avatar"):
             try:
                 await msg.answer_photo(st["avatar"], caption=text, reply_markup=kb)
@@ -481,6 +486,7 @@ def setup(api: Api, db: DB):
             return
         tier = mmr_to_rank_tier(int(arg))
         await db.update_user(user["tg_id"], mmr=int(arg), rank_tier=tier)
+        await update_webapp_button(msg.bot, await db.get_user(user["tg_id"]))
         await msg.answer(f"{e('ok')} Запомнил: <b>{arg}</b> MMR — это {rank_e(tier)} <b>{rank_name(tier)}</b>.\n"
                          f"Дальше буду считать ±{MMR_STEP} за рейтинговую игру "
                          "(это приблизительно — Valve не отдаёт точное изменение). "

@@ -1,4 +1,5 @@
 """Текст отчёта о матче (HTML для Telegram). Идёт подписью к картинке драфта — одним сообщением."""
+import time
 from dataclasses import dataclass
 from html import escape
 
@@ -136,3 +137,19 @@ def short_caption(m: Match, me: Player) -> str:
     won = me.is_radiant == m.radiant_win
     return (f"{e('win') if won else e('lose')} <b>{'Победа' if won else 'Поражение'}</b> · "
             f"{hero_e(me.hero_id)} {escape(me.hero_name)} · {fmt_time(m.duration)}")
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    return few if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else many
+
+
+def ago(ts: int) -> str:
+    sec = max(0, int(time.time()) - int(ts or 0))
+    if sec < 3600:
+        return f"{max(1, sec // 60)} мин назад"
+    if sec < 86400:
+        return f"{sec // 3600} ч назад"
+    days = sec // 86400
+    return "вчера" if days == 1 else f"{days} дн назад"

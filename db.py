@@ -56,6 +56,11 @@ class DB:
         self.conn = await aiosqlite.connect(self.path)
         self.conn.row_factory = aiosqlite.Row
         await self.conn.executescript(SCHEMA)
+        # миграции: колонки, добавленные после первого запуска
+        cur = await self.conn.execute("PRAGMA table_info(users)")
+        cols = {r["name"] for r in await cur.fetchall()}
+        if "username" not in cols:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
         await self.conn.commit()
 
     async def close(self):
@@ -82,6 +87,7 @@ class DB:
     async def delete_user(self, tg_id):
         await self.conn.execute("DELETE FROM users WHERE tg_id=?", (tg_id,))
         await self.conn.execute("DELETE FROM pending WHERE tg_id=?", (tg_id,))
+        await self.conn.execute("DELETE FROM sent WHERE tg_id=?", (tg_id,))
         await self.conn.commit()
 
     async def update_user(self, tg_id, **fields):
@@ -159,3 +165,48 @@ class DB:
             (key, data, int(time.time())),
         )
         await self.conn.commit()
+
+    # --- админка ---
+    async def set_username(self, tg_id, username):
+        await self.conn.execute("UPDATE users SET username=? WHERE tg_id=?", (username, tg_id))
+        await self.conn.commit()
+
+    async def _one(self, sql, *args):
+        cur = await self.conn.execute(sql, args)
+        return (await cur.fetchone())[0]
+
+    async def admin_summary(self, now):
+        day, week = now - 86400, now - 7 * 86400
+        return {
+            "total": await self._one("SELECT COUNT(*) FROM users"),
+            "active": await self._one("SELECT COUNT(*) FROM users WHERE active=1"),
+            "inactive": await self._one("SELECT COUNT(*) FROM users WHERE active=0"),
+            "new_day": await self._one("SELECT COUNT(*) FROM users WHERE created_at>=?", day),
+            "new_week": await self._one("SELECT COUNT(*) FROM users WHERE created_at>=?", week),
+            "played_week": await self._one("SELECT COUNT(*) FROM users WHERE last_played>=?", week),
+            "reports_day": await self._one("SELECT COUNT(*) FROM sent WHERE sent_at>=?", day),
+            "reports_week": await self._one("SELECT COUNT(*) FROM sent WHERE sent_at>=?", week),
+            "reports_total": await self._one("SELECT COUNT(*) FROM sent"),
+            "pending": await self._one("SELECT COUNT(*) FROM pending"),
+        }
+
+    _USERS_SQL = """SELECT u.*, (SELECT COUNT(*) FROM sent s WHERE s.tg_id=u.tg_id) AS reports,
+                           (SELECT MAX(sent_at) FROM sent s WHERE s.tg_id=u.tg_id) AS last_report
+                    FROM users u"""
+
+    async def users_page(self, limit, offset):
+        cur = await self.conn.execute(self._USERS_SQL + " ORDER BY u.created_at DESC LIMIT ? OFFSET ?",
+                                      (limit, offset))
+        return await cur.fetchall()
+
+    async def user_card(self, tg_id):
+        cur = await self.conn.execute(self._USERS_SQL + " WHERE u.tg_id=?", (tg_id,))
+        return await cur.fetchone()
+
+    async def all_users(self):
+        cur = await self.conn.execute(self._USERS_SQL + " ORDER BY u.created_at")
+        return await cur.fetchall()
+
+    async def active_chats(self):
+        cur = await self.conn.execute("SELECT tg_id, chat_id FROM users WHERE active=1")
+        return await cur.fetchall()

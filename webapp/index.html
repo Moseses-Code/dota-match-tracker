@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<title>Dota Match Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600;700&display=swap">
+<style>
+/* Макет: шапка игрока + липкие вкладки, под ними одна колонка карточек; матч открывается поверх экраном. */
+:root {
+  --bg: #0e1218;        /* ночь карты */
+  --surface: #161c25;
+  --surface-2: #1e2631;
+  --line: #2a3442;
+  --fg: #e9edf3;
+  --muted: #8d98aa;
+  --gold: #e3b04b;      /* золото Dota — акцент */
+  --win: #6cc072;       /* Силы Света */
+  --loss: #e25b4c;      /* Силы Тьмы */
+  --on-gold: #1a1407;
+  --font-display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Onest", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --r: 14px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f2f3f6; --surface: #ffffff; --surface-2: #eceff4; --line: #d9dee6;
+    --fg: #141a23; --muted: #5b6676; --gold: #a8740c; --win: #2e8a3a; --loss: #c23a2c; --on-gold: #ffffff;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f2f3f6; --surface: #ffffff; --surface-2: #eceff4; --line: #d9dee6;
+  --fg: #141a23; --muted: #5b6676; --gold: #a8740c; --win: #2e8a3a; --loss: #c23a2c; --on-gold: #ffffff;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 15px/1.45 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--bg);
+}
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 700; text-wrap: balance; }
+h2 { font-size: 15px; letter-spacing: .02em; }
+.muted { color: var(--muted); }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+
+/* шапка игрока */
+.hero-head { padding-block: 18px 14px; display: grid; gap: 14px; }
+.who { display: flex; gap: 14px; align-items: center; }
+.avatar img, .hico img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.state { text-align: center; padding-block: 28px; display: grid; gap: 10px; justify-items: center; color: var(--muted); }
+.btn { background: var(--gold); color: var(--on-gold); border: 0; border-radius: 10px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
+.skel { background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; border-radius: var(--r); height: 160px; }
+@media (prefers-reduced-motion: no-preference) { .skel { animation: sk 1.2s linear infinite; } @keyframes sk { to { background-position: -200% 0; } } }
+.avatar {
+  width: 58px; height: 58px; border-radius: 16px; flex: none;
+  background: radial-gradient(circle at 30% 25%, color-mix(in oklab, var(--gold) 70%, var(--surface)), var(--surface-2));
+  display: grid; place-items: center; font-family: var(--font-display); font-size: 22px; color: var(--on-gold);
+  box-shadow: 0 0 0 2px var(--gold);
+}
+.who h1 { font-size: 20px; line-height: 1.15; }
+.rank { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 4px; font-size: 13px; }
+.medal { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--gold); }
+.medal svg { width: 18px; height: 18px; }
+.sample {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 2px 8px;
+}
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.kpi { background: var(--surface); border-radius: 12px; padding: 10px 10px 9px; min-width: 0; }
+.kpi b { display: block; font-family: var(--font-display); font-size: 17px; font-weight: 700; }
+.kpi span { font-size: 11px; color: var(--muted); }
+
+/* вкладки */
+.tabs {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.tabs .wrap { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.tabs .wrap::-webkit-scrollbar { display: none; }
+.tab {
+  flex: none; background: none; border: 0; padding: 12px 12px 11px; cursor: pointer;
+  color: var(--muted); font-weight: 600; font-size: 14px; border-bottom: 2px solid transparent;
+}
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--gold); }
+
+main { padding-block: 16px 40px; display: grid; gap: 14px; }
+.card { background: var(--surface); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; min-width: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 560px) { .grid2 { grid-template-columns: minmax(0, 1fr); } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* результат */
+.res { display: inline-grid; place-items: center; min-width: 42px; height: 22px; padding: 0 6px; border-radius: 6px;
+  font-family: var(--font-display); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.res.w { background: color-mix(in oklab, var(--win) 22%, transparent); color: var(--win); }
+.res.l { background: color-mix(in oklab, var(--loss) 22%, transparent); color: var(--loss); }
+.strip { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 3px; }
+.strip i { height: 22px; border-radius: 4px; display: block; }
+.strip .w { background: var(--win); } .strip .l { background: var(--loss); }
+
+/* аватар героя (в приложении — портрет героя) */
+.hico { width: 36px; height: 36px; border-radius: 10px; flex: none; display: grid; place-items: center;
+  font-weight: 700; font-size: 12px; color: #fff; letter-spacing: .02em; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+
+/* списки */
+.list { display: grid; gap: 2px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-radius: 10px; min-width: 0; }
+button.row { width: 100%; background: none; border: 0; text-align: left; cursor: pointer; }
+button.row:hover { background: var(--surface-2); }
+.row .grow { flex: 1; min-width: 0; }
+.row .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .s { font-size: 12px; color: var(--muted); }
+.row .end { text-align: right; flex: none; font-size: 13px; }
+
+.bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 3px; background: var(--gold); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 5px 11px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.chip[aria-pressed="true"] { border-color: var(--gold); color: var(--fg); background: color-mix(in oklab, var(--gold) 14%, transparent); }
+
+/* графики */
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font: 10px var(--font-body); }
+.tip {
+  position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; font-size: 12px; white-space: nowrap; transform: translate(-50%, -110%);
+  box-shadow: 0 6px 18px rgba(0,0,0,.25);
+}
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+.compare { display: grid; gap: 10px; }
+.cmp-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 64px; gap: 10px; align-items: center; font-size: 13px; }
+.cmp-track { position: relative; height: 10px; border-radius: 5px; background: var(--surface-2); }
+.cmp-track i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--gold); }
+.cmp-track b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); border-radius: 1px; }
+.delta-up { color: var(--win); } .delta-down { color: var(--loss); }
+
+/* тепловая карта */
+.heat { display: grid; grid-template-columns: 22px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 10px; color: var(--muted); }
+.heat .c { aspect-ratio: 1; border-radius: 3px; max-width: 100%; }
+.heat .h { text-align: center; }
+
+/* экран матча */
+.sheet { position: fixed; inset: 0; z-index: 20; background: var(--bg); overflow-y: auto;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.sheet-top { display: flex; align-items: center; gap: 10px; padding-block: 12px; }
+.back { background: var(--surface); border: 0; border-radius: 10px; padding: 7px 12px; cursor: pointer; font-weight: 600; }
+.score { display: flex; align-items: center; justify-content: center; gap: 14px; font-family: var(--font-display); font-size: 26px; }
+.score .rad { color: var(--win); } .score .dire { color: var(--loss); }
+.teams { display: grid; gap: 10px; }
+.team-name { font-family: var(--font-display); font-size: 12px; letter-spacing: .06em; }
+.picks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.pick { background: var(--surface-2); border-radius: 10px; padding: 8px 4px 7px; display: grid; justify-items: center; gap: 4px; min-width: 0; text-align: center; position: relative; }
+.pick.me { box-shadow: 0 0 0 2px var(--gold); }
+.pick .pos { position: absolute; top: 4px; left: 4px; font-size: 9px; font-weight: 700; color: var(--muted); }
+.pick .nm { font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 520px; }
+th, td { padding: 7px 8px; text-align: right; white-space: nowrap; }
+th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+td:first-child, th:first-child { text-align: left; }
+tr.me td { color: var(--gold); font-weight: 600; }
+tbody tr + tr td { border-top: 1px solid var(--line); }
+.team-sep td { padding-top: 12px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-top: 0 !important; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: up .22s ease-out; }
+  @keyframes up { from { transform: translateY(16px); opacity: .6; } to { transform: none; opacity: 1; } }
+}
+</style>
+</head>
+<body>
+
+<header class="wrap hero-head">
+  <div class="who">
+    <div class="avatar" id="avatar" aria-hidden="true">M</div>
+    <div style="min-width:0">
+      <h1 id="nick">Moseses</h1>
+      <div class="rank">
+        <span class="medal"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 15.6 6.6 18.5l1.2-6L3.3 8.3l6.1-.7z"/></svg><span id="medal">Властелин III</span></span>
+        <span class="muted" id="mmr">≈4 234 MMR</span>
+        <span class="sample" id="sample">пример данных</span>
+      </div>
+    </div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+</header>
+
+<nav class="tabs" aria-label="Разделы">
+  <div class="wrap" role="tablist" id="tabs"></div>
+</nav>
+
+<main class="wrap" id="view" aria-live="polite"></main>
+
+<section class="sheet" id="sheet" hidden aria-modal="true" role="dialog" aria-label="Матч"></section>
+
+<script>
+/* Данные — из OpenDota по Dota ID, который передаёт бот (?id=…&mmr=…).
+   Без id страница показывает пример на выдуманных данных. */
+const params = new URLSearchParams(location.search);
+const ACCOUNT = parseInt(params.get("id") || "", 10) || null;
+const DEMO = !ACCOUNT;
+const OD = "https://api.opendota.com/api";
+const CDN = "https://cdn.cloudflare.steamstatic.com";
+const DAYS = 30;
+
+/* ---------- утилиты ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const fmtK = v => Math.abs(v) >= 10000 ? (v / 1000).toFixed(1) + "k" : Math.round(v).toLocaleString("ru-RU");
+const now = () => Math.floor(Date.now() / 1000);
+const ago = ts => { const s = now() - ts; if (s < 3600) return `${Math.max(1, s / 60 | 0)} мин назад`;
+  if (s < 86400) return `${s / 3600 | 0} ч назад`; const d = s / 86400 | 0; return d === 1 ? "вчера" : `${d} дн назад`; };
+const pct = (w, g) => g ? Math.round(w / g * 100) : 0;
+const plural = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
+const games = n => `${n} ${plural(n, "игра", "игры", "игр")}`;
+const POS = { 1: "Керри", 2: "Мидер", 3: "Хардлейнер", 4: "Саппорт 4", 5: "Саппорт 5" };
+const RANKS = { 1: "Рекрут", 2: "Страж", 3: "Рыцарь", 4: "Герой", 5: "Легенда", 6: "Властелин", 7: "Божество", 8: "Титан" };
+const ROMAN = ["", "I", "II", "III", "IV", "V"];
+const rankName = (t, lb) => { if (!t) return "Без ранга"; const m = t / 10 | 0, s = t % 10;
+  return m === 8 ? (lb ? `Титан #${lb}` : "Титан") : `${RANKS[m] || "?"} ${ROMAN[s] || ""}`.trim(); };
+// примерный MMR по медали — как в боте (середина диапазона звезды)
+const estimateMmr = t => { if (!t) return null; const m = t / 10 | 0, s = Math.min(Math.max(t % 10, 1), 5);
+  if (m >= 8) return 5620; if (m === 7) return 4620 + (s - 1) * 200 + 99;
+  const lo = (m - 1) * 770 + (s - 1) * 154; return Math.floor((lo + (s === 5 ? m * 770 - 1 : lo + 153)) / 2); };
+const hueOf = name => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+const hico = (h, size = 36) => h.img
+  ? `<span class="hico" style="width:${size}px;height:${size}px;background:var(--surface-2)" aria-hidden="true"><img src="${CDN}${esc(h.img)}" alt="" loading="lazy" onerror="this.remove()"></span>`
+  : `<span class="hico" style="width:${size}px;height:${size}px;background:linear-gradient(135deg,hsl(${hueOf(h.name)} 55% 42%),hsl(${(hueOf(h.name) + 40) % 360} 50% 28%))" aria-hidden="true">${esc(h.name.split(/[\s-]/).map(w => w[0]).join("").slice(0, 2))}</span>`;
+const res = w => `<span class="res ${w ? "w" : "l"}">${w ? "WIN" : "LOSS"}</span>`;
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} } };
+
+async function od(path) {
+  for (let i = 0; i < 3; i++) {
+    const r = await fetch(OD + path).catch(() => null);
+    if (r && r.status === 429) { await new Promise(ok => setTimeout(ok, 2000 * (i + 1))); continue; }
+    if (r && r.ok) return r.json();
+    if (r && r.status === 404) return null;
+    await new Promise(ok => setTimeout(ok, 800));
+  }
+  throw new Error("OpenDota не отвечает");
+}
+// константы игры кэшируются в браузере на 3 дня
+async function constant(name) {
+  const c = store.get("c:" + name);
+  if (c && Date.now() - c.t < 3 * 86400e3) return c.d;
+  const d = await od("/constants/" + name);
+  if (name === "items") {   // в кэш — только нужное, файл большой
+    const slim = {}; for (const [k, v] of Object.entries(d)) if (v.id) slim[v.id] = { k, n: v.dname || k, img: v.img, cost: v.cost || 0 };
+    store.set("c:" + name, { t: Date.now(), d: slim }); return slim;
+  }
+  const slim = {}; for (const v of Object.values(d)) slim[v.id] = { name: v.localized_name, img: v.img, roles: v.roles || [] };
+  store.set("c:" + name, { t: Date.now(), d: slim }); return slim;
+}
+
+/* ---------- модель ---------- */
+let DATA = null;   // { profile, matches, friends }
+const HERO = {};   // id -> {name, img, roles}
+
+// позиция по линии и фарму (для списка матчей; точная — в разборе, как в боте)
+function roughPos(m) {
+  const lhpm = m.lh / Math.max(1, m.dur / 60);
+  if (m.lane === 2) return 2;
+  if (m.lane === 1) return lhpm >= 3.2 ? 1 : 5;
+  if (m.lane === 3) return lhpm >= 2.6 ? 3 : 4;
+  return null;
+}
+
+async function loadReal() {
+  const [heroes, player, list, peers] = await Promise.all([
+    constant("heroes"), od(`/players/${ACCOUNT}`),
+    od(`/players/${ACCOUNT}/matches?date=${DAYS}&project=hero_id&project=kills&project=deaths&project=assists` +
+       `&project=duration&project=player_slot&project=radiant_win&project=start_time&project=lobby_type` +
+       `&project=gold_per_min&project=xp_per_min&project=last_hits&project=lane_role&project=game_mode`),
+    od(`/players/${ACCOUNT}/peers?date=${DAYS}`),
+  ]);
+  Object.assign(HERO, heroes);
+  const prof = (player || {}).profile || {};
+  const mmrParam = parseInt(params.get("mmr") || "", 10);
+  const matches = (list || []).map(r => {
+    const h = HERO[r.hero_id] || { name: `#${r.hero_id}` };
+    const m = { id: r.match_id, heroId: r.hero_id, hero: h.name, img: h.img, slot: r.player_slot,
+      win: (r.player_slot < 128) === r.radiant_win, dur: r.duration, k: r.kills, d: r.deaths, a: r.assists,
+      gpm: r.gold_per_min || 0, xpm: r.xp_per_min || 0, lh: r.last_hits || 0, lane: r.lane_role,
+      end: r.start_time + r.duration, ranked: r.lobby_type === 7 };
+    m.pos = roughPos(m); return m;
+  });
+  const monthAgo = now() - DAYS * 86400;
+  const friends = (peers || []).filter(p => p.with_games && p.last_played >= monthAgo)
+    .sort((a, b) => b.with_games - a.with_games).slice(0, 5)
+    .map(p => ({ name: p.personaname || String(p.account_id), avatar: p.avatarfull, games: p.with_games, wins: p.with_win || 0, last: p.last_played }));
+  return {
+    profile: { name: prof.personaname || `ID ${ACCOUNT}`, avatar: prof.avatarfull, tier: player?.rank_tier, lb: player?.leaderboard_rank,
+      mmr: mmrParam || estimateMmr(player?.rank_tier), approx: !mmrParam || params.get("approx") === "1", private: !prof.personaname && !matches.length },
+    matches, friends,
+  };
+}
+
+function loadDemo() {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const H = [["Anti-Mage", 1], ["Juggernaut", 1], ["Phantom Assassin", 1], ["Faceless Void", 1], ["Invoker", 2], ["Mars", 3]];
+  const pool = [0, 1, 3, 4, 2, 0, 1, 3, 5, 0], t0 = now();
+  const matches = Array.from({ length: 60 }, (_, i) => {
+    const [hero, pos] = H[pool[Math.floor(rnd() * pool.length)]];
+    const win = rnd() < (pos === 1 ? 0.6 : 0.5), dur = Math.round(1500 + rnd() * 1500);
+    const gpm = Math.round((pos === 1 ? 560 : pos === 2 ? 520 : 450) + (win ? 60 : -40) + rnd() * 120);
+    const hour = [19, 20, 21, 22, 23, 0, 18, 21, 22, 15][Math.floor(rnd() * 10)];
+    const dt = new Date((t0 - Math.floor(i * 0.5 + rnd() * 0.4) * 86400) * 1000); dt.setHours(hour, 30);
+    return { id: 8123456700 - i, hero, pos, win, dur, k: Math.round(6 + rnd() * 10), d: Math.round(1 + rnd() * 8), a: Math.round(4 + rnd() * 14),
+      gpm, xpm: Math.round(gpm * 1.1 + rnd() * 60), lh: Math.round(gpm * dur / 60 / 90), end: Math.floor(dt / 1000), ranked: rnd() < 0.8, demo: true };
+  });
+  const friends = [["Kirill", 14, 10, 1], ["nekit", 9, 4, 2], ["Vlad_x", 6, 4, 5], ["Artem", 4, 1, 11], ["Мишаня", 2, 2, 24]]
+    .map(([name, g, w, d]) => ({ name, games: g, wins: w, last: t0 - d * 86400 }));
+  return { profile: { name: "Moseses", tier: 63, mmr: 4234, approx: true }, matches, friends };
+}
+
+/* ---------- шапка ---------- */
+function renderHead() {
+  const { profile: p, matches: ms } = DATA;
+  $("#nick").textContent = p.name;
+  $("#medal").textContent = rankName(p.tier, p.lb);
+  $("#mmr").textContent = p.mmr ? `${p.approx ? "≈" : ""}${p.mmr.toLocaleString("ru-RU")} MMR` : "";
+  $("#sample").hidden = !DEMO;
+  $("#avatar").innerHTML = p.avatar ? `<img src="${esc(p.avatar)}" alt="">` : esc(p.name[0] || "?");
+  const w = ms.filter(m => m.win).length, avg = f => ms.length ? ms.reduce((s, m) => s + f(m), 0) / ms.length : 0;
+  $("#kpis").innerHTML = [
+    [ms.length, "матчей за месяц"], [pct(w, ms.length) + "%", "винрейт"],
+    [avg(m => (m.k + m.a) / Math.max(1, m.d)).toFixed(1), "средний KDA"], [Math.round(avg(m => m.gpm)), "средний GPM"],
+  ].map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+}
+
+/* ---------- графики ---------- */
+function tooltipFor(box) {
+  let tip = box.querySelector(".tip");
+  if (!tip) { tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; box.appendChild(tip); }
+  return tip;
+}
+// общий каркас интерактива: перекрестие + подсказка по ближайшей точке
+function bindCross(box, n, W, H, L, R, T, B, yOf, text) {
+  if (!box) return;
+  const svg = box.querySelector("svg"), tip = tooltipFor(box), cross = svg.querySelector(".cross"), dot = svg.querySelector(".dot");
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(n, Math.round((px - L) / (W - L - R) * n)));
+    const cx = L + i / n * (W - L - R), cy = yOf(i);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+    if (dot) { dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("visibility", "visible"); }
+    tip.innerHTML = text(i); tip.style.left = cx / W * r.width + "px"; tip.style.top = cy / H * r.height + "px"; tip.hidden = false;
+  };
+  const hit = svg.querySelector("[data-hit]");
+  hit.addEventListener("pointermove", move); hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dot?.setAttribute("visibility", "hidden"); });
+}
+
+const WR = { W: 360, H: 170, L: 30, R: 6, T: 8, B: 20 };
+function winratePoints() {
+  const g = [...DATA.matches].reverse();
+  return { g, pts: g.map((_, i) => { const s = g.slice(Math.max(0, i - 9), i + 1); return pct(s.filter(m => m.win).length, s.length); }) };
+}
+function winrateChart() {
+  const { pts } = winratePoints(); if (pts.length < 2) return `<p class="muted" style="margin:0">Мало игр для графика.</p>`;
+  const { W, H, L, R, T, B } = WR, n = pts.length - 1;
+  const x = i => L + i / n * (W - L - R), y = v => T + (100 - v) / 100 * (H - T - B);
+  const line = pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  return `<div class="chart" id="wr"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Винрейт по последним 10 играм">
+    <defs><linearGradient id="wrg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--gold)" stop-opacity=".28"/><stop offset="1" stop-color="var(--gold)" stop-opacity="0"/></linearGradient></defs>
+    ${[0, 25, 50, 75, 100].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" ${v === 50 ? 'stroke-width="1.5"' : 'stroke-dasharray="2 4"'}/><text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${v}%</text>`).join("")}
+    <path d="${line}L${x(n)},${y(0)}L${x(0)},${y(0)}Z" fill="url(#wrg)"/><path d="${line}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${x(n)}" cy="${y(pts[n])}" r="4" fill="var(--gold)" stroke="var(--surface)" stroke-width="2"/>
+    <text x="${L}" y="${H - 5}">${games(pts.length)} назад</text><text x="${W - R}" y="${H - 5}" text-anchor="end">сейчас</text>
+    <line class="cross" y1="${T}" y2="${H - B}" stroke="var(--muted)" visibility="hidden"/><circle class="dot" r="4" fill="var(--gold)" visibility="hidden"/>
+    <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" data-hit="1"/></svg></div>`;
+}
+function bindWinrate() {
+  const { g, pts } = winratePoints(); const { W, H, L, R, T, B } = WR;
+  bindCross($("#wr"), pts.length - 1, W, H, L, R, T, B, i => T + (100 - pts[i]) / 100 * (H - T - B),
+    i => `<b>${pts[i]}%</b> за 10 игр<br><span class="muted">${esc(g[i].hero)} · ${g[i].win ? "победа" : "поражение"} · ${ago(g[i].end)}</span>`);
+}
+
+function radar(vals, size = 240) {
+  const axes = ["Фарм", "Драки", "Строения", "Лечение", "Саппортинг"];
+  const c = size / 2, R = size * 0.32, max = Math.max(50, Math.ceil(Math.max(...vals) / 10) * 10);
+  const pt = (i, v) => { const a = -Math.PI / 2 + 2 * Math.PI * i / 5; return [c + R * v / max * Math.cos(a), c + R * v / max * Math.sin(a)]; };
+  const ring = l => axes.map((_, i) => pt(i, max * l).join(",")).join(" ");
+  return `<div class="chart"><svg viewBox="0 0 ${size} ${size}" role="img" aria-label="Вклад в игру">
+    ${[.25, .5, .75, 1].map(l => `<polygon points="${ring(l)}" fill="none" stroke="var(--line)"/>`).join("")}
+    ${axes.map((_, i) => `<line x1="${c}" y1="${c}" x2="${pt(i, max)[0]}" y2="${pt(i, max)[1]}" stroke="var(--line)"/>`).join("")}
+    <polygon points="${vals.map((v, i) => pt(i, v).join(",")).join(" ")}" fill="var(--gold)" fill-opacity=".25" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round"/>
+    ${vals.map((v, i) => { const [x, y] = pt(i, v); return `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--gold)"/>`; }).join("")}
+    ${axes.map((n, i) => { const [x, y] = pt(i, max * 1.32); return `<text x="${x}" y="${y - 2}" text-anchor="middle" style="fill:var(--fg);font-weight:600;font-size:11px">${n}</text><text x="${x}" y="${y + 11}" text-anchor="middle" style="fill:var(--gold);font-weight:700">${Math.round(vals[i])}%</text>`; }).join("")}
+  </svg></div>`;
+}
+
+const GC = { W: 360, H: 190, L: 36, R: 6, T: 8, B: 20 };
+function goldChart(series) {
+  const { W, H, L, R, T, B } = GC, n = series.length - 1;
+  const lim = Math.ceil(Math.max(2000, ...series.map(Math.abs)) / 5000) * 5000;
+  const x = i => L + i / n * (W - L - R), y = v => T + (lim - v) / (2 * lim) * (H - T - B);
+  const line = series.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const area = `${line}L${x(n)},${y(0)}L${x(0)},${y(0)}Z`, mins = [];
+  for (let m = 0; m <= n; m += 10) mins.push(m);
+  return `<div class="chart" id="gold"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Преимущество по золоту">
+    <defs><clipPath id="above"><rect x="0" y="0" width="${W}" height="${y(0)}"/></clipPath><clipPath id="below"><rect x="0" y="${y(0)}" width="${W}" height="${H}"/></clipPath></defs>
+    ${[-lim, -lim / 2, 0, lim / 2, lim].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" ${v ? 'stroke-dasharray="2 4"' : 'stroke-width="1.5"'}/><text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${v > 0 ? "+" : ""}${fmtK(v)}</text>`).join("")}
+    ${mins.map(m => `<text x="${x(m)}" y="${H - 5}" text-anchor="middle">${m}'</text>`).join("")}
+    <path d="${area}" fill="var(--win)" fill-opacity=".28" clip-path="url(#above)"/><path d="${area}" fill="var(--loss)" fill-opacity=".28" clip-path="url(#below)"/>
+    <path d="${line}" fill="none" stroke="var(--fg)" stroke-width="1.6" stroke-linejoin="round"/>
+    <text x="${L + 6}" y="${T + 10}" style="fill:var(--win);font-weight:600">▲ Силы Света</text><text x="${L + 6}" y="${H - B - 5}" style="fill:var(--loss);font-weight:600">▼ Силы Тьмы</text>
+    <line class="cross" y1="${T}" y2="${H - B}" stroke="var(--muted)" visibility="hidden"/>
+    <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" data-hit="1"/></svg></div>`;
+}
+function bindGold(series) {
+  const { W, H, L, R, T, B } = GC, lim = Math.ceil(Math.max(2000, ...series.map(Math.abs)) / 5000) * 5000;
+  bindCross($("#gold"), series.length - 1, W, H, L, R, T, B, i => T + (lim - series[i]) / (2 * lim) * (H - T - B),
+    i => `<b>${i}'</b> · ${series[i] >= 0 ? "Свет" : "Тьма"} +${fmtK(Math.abs(series[i]))} золота`);
+}
+
+/* ---------- вкладки ---------- */
+const TABS = [["overview", "Обзор"], ["matches", "Матчи"], ["heroes", "Герои"], ["roles", "Роли"], ["activity", "Активность"], ["friends", "Друзья"]];
+let current = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : "overview";
+const state = { heroSort: "games" };
+function renderTabs() {
+  $("#tabs").innerHTML = TABS.map(([id, name]) =>
+    `<button class="tab" role="tab" id="tab-${id}" aria-selected="${id === current}" data-tab="${id}">${name}</button>`).join("");
+}
+function goTab(id) { current = id; try { history.replaceState(null, "", location.search + "#" + id); } catch (_) {} renderTabs(); render(); window.scrollTo({ top: 0 }); }
+$("#tabs").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) goTab(b.dataset.tab); });
+
+function heroStats() {
+  const map = {};
+  for (const m of DATA.matches) {
+    const h = map[m.hero] ||= { name: m.hero, img: m.img, games: 0, wins: 0, k: 0, d: 0, a: 0 };
+    h.games++; h.wins += m.win; h.k += m.k; h.d += m.d; h.a += m.a;
+  }
+  return Object.values(map).map(h => ({ ...h, wr: pct(h.wins, h.games), kda: (h.k + h.a) / Math.max(1, h.d) })).sort((a, b) => b.games - a.games);
+}
+function heroRow(h, full) {
+  return `<div class="row">${hico(h)}
+    <span class="grow" style="display:grid;gap:5px"><span style="display:flex;justify-content:space-between;gap:8px">
+      <b class="t">${esc(h.name)}</b><span class="s">${games(h.games)}${full ? ` · KDA ${h.kda.toFixed(1)}` : ""}</span></span>
+      <span class="bar"><i style="width:${h.wr}%;background:${h.wr >= 50 ? "var(--win)" : "var(--loss)"}"></i></span></span>
+    <span class="end" style="width:44px"><b>${h.wr}%</b></span></div>`;
+}
+const empty = text => `<section class="card"><div class="state">${text}</div></section>`;
+
+const VIEWS = {
+  overview() {
+    const ms = DATA.matches;
+    if (!ms.length) return empty("За последний месяц матчей не видно.<br>Проверь, что в Dota 2 включена «Общедоступная история матчей».");
+    let streak = 0; for (const m of ms) { if (m.win === ms[0].win) streak++; else break; }
+    const recent = ms.slice(0, 10), avg = (list, f) => list.reduce((s, m) => s + f(m), 0) / list.length;
+    const metrics = [["KDA", m => (m.k + m.a) / Math.max(1, m.d), 1], ["GPM", m => m.gpm, 0], ["XPM", m => m.xpm, 0], ["LH/мин", m => m.lh / Math.max(1, m.dur / 60), 1]];
+    return `
+      <section class="card"><div class="card-head"><h2>Винрейт</h2><span class="muted" style="font-size:12px">скользящий, по 10 играм</span></div>${winrateChart()}</section>
+      <section class="card">
+        <div class="card-head"><h2>Последние ${Math.min(20, ms.length)} игр</h2>
+          <span style="font-size:13px">Серия: <b class="${ms[0].win ? "delta-up" : "delta-down"}">${streak} ${ms[0].win ? plural(streak, "победа", "победы", "побед") : plural(streak, "поражение", "поражения", "поражений")}</b></span></div>
+        <div class="strip" role="img" aria-label="Победы и поражения">${ms.slice(0, 20).reverse().map(m => `<i class="${m.win ? "w" : "l"}" title="${esc(m.hero)}: ${m.win ? "победа" : "поражение"}"></i>`).join("")}</div>
+        <div class="legend"><span><i style="background:var(--win)"></i>победа</span><span><i style="background:var(--loss)"></i>поражение</span><span>слева — старые, справа — новые</span></div>
+      </section>
+      <div class="grid2">
+        <section class="card">
+          <div class="card-head"><h2>Форма</h2><span class="label">10 игр против месяца</span></div>
+          <div class="compare">${metrics.map(([k, f, dec]) => {
+            const mine = avg(recent, f), base = avg(ms, f), max = Math.max(mine, base) * 1.25 || 1, d = base ? (mine - base) / base * 100 : 0;
+            return `<div class="cmp-row"><span class="label">${k}</span>
+              <div class="cmp-track" title="за месяц: ${base.toFixed(dec)}"><i style="width:${mine / max * 100}%"></i><b style="left:${base / max * 100}%"></b></div>
+              <span style="text-align:right"><b>${dec ? mine.toFixed(dec) : fmtK(mine)}</b> <span class="${d >= 0 ? "delta-up" : "delta-down"}">${d >= 0 ? "▲" : "▼"}${Math.abs(d).toFixed(0)}%</span></span></div>`;
+          }).join("")}</div>
+          <div class="legend"><span><i style="background:var(--gold)"></i>последние 10 игр</span><span><i style="background:var(--fg);width:2px"></i>в среднем за месяц</span></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>Любимые герои</h2><button class="chip" data-go="heroes">все герои</button></div>
+          <div class="list">${heroStats().slice(0, 3).map(h => heroRow(h)).join("")}</div>
+        </section>
+      </div>`;
+  },
+  matches() {
+    if (!DATA.matches.length) return empty("Матчей за последний месяц нет.");
+    return `<section class="card">
+      <div class="card-head"><h2>Матчи</h2><span class="muted" style="font-size:12px">нажми на матч — откроется разбор</span></div>
+      <div class="list">${DATA.matches.slice(0, 50).map(m => `
+        <button class="row" data-match="${m.id}">
+          ${res(m.win)} ${hico({ name: m.hero, img: m.img })}
+          <span class="grow"><span class="t">${esc(m.hero)}</span><span class="s"> ${m.pos ? POS[m.pos] + " · " : ""}${m.ranked ? "рейтинг" : "обычная"}</span><br>
+          <span class="s">${m.k}/${m.d}/${m.a} · ${fmtTime(m.dur)} · ${m.gpm} GPM</span></span>
+          <span class="end muted">${ago(m.end)}</span>
+        </button>`).join("")}</div></section>`;
+  },
+  heroes() {
+    if (!DATA.matches.length) return empty("Матчей за последний месяц нет.");
+    const sort = state.heroSort;
+    const list = heroStats().sort((a, b) => sort === "wr" ? b.wr - a.wr || b.games - a.games : sort === "kda" ? b.kda - a.kda : b.games - a.games);
+    return `<section class="card">
+      <div class="card-head"><h2>Герои</h2>
+        <div class="chips" role="group" aria-label="Сортировка">${[["games", "по играм"], ["wr", "по винрейту"], ["kda", "по KDA"]].map(([k, n]) =>
+          `<button class="chip" aria-pressed="${sort === k}" data-sort="${k}">${n}</button>`).join("")}</div></div>
+      <div class="list">${list.map(h => heroRow(h, true)).join("")}</div></section>`;
+  },
+  roles() {
+    const known = DATA.matches.filter(m => m.pos);
+    if (!known.length) return empty("Позиции видны только в разобранных матчах — их пока нет.");
+    const rows = [1, 2, 3, 4, 5].map(p => { const ms = known.filter(m => m.pos === p); return { p, games: ms.length, wins: ms.filter(m => m.win).length }; });
+    const maxG = Math.max(...rows.map(r => r.games));
+    const best = rows.filter(r => r.games >= 3).sort((a, b) => pct(b.wins, b.games) - pct(a.wins, a.games))[0];
+    return `<section class="card">
+      <div class="card-head"><h2>Позиции</h2>${best ? `<span style="font-size:13px">Лучшая: <b class="delta-up">${POS[best.p]}</b></span>` : ""}</div>
+      <div class="list">${rows.map(r => `
+        <div class="row" style="align-items:stretch">
+          <span class="label" style="width:44px;padding-top:2px">POS ${r.p}</span>
+          <span class="grow" style="display:grid;gap:6px">
+            <span style="display:flex;justify-content:space-between;gap:8px"><b>${POS[r.p]}</b><span class="muted">${games(r.games)}</span></span>
+            <span class="bar"><i style="width:${maxG ? r.games / maxG * 100 : 0}%"></i></span></span>
+          <span class="end" style="width:64px"><b class="${pct(r.wins, r.games) >= 50 ? "delta-up" : "delta-down"}">${r.games ? pct(r.wins, r.games) + "%" : "—"}</b><br><span class="s">винрейт</span></span>
+        </div>`).join("")}</div>
+      <p class="muted" style="margin:0;font-size:12px">По ${games(known.length)} из ${DATA.matches.length}: позиция видна только в разобранных матчах — по линии и фарму.</p>
+    </section>`;
+  },
+  activity() {
+    if (!DATA.matches.length) return empty("Матчей за последний месяц нет.");
+    const days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+    const grid = Array.from({ length: 7 }, () => Array(24).fill(0)), byHour = Array.from({ length: 24 }, () => ({ g: 0, w: 0 }));
+    for (const m of DATA.matches) {
+      const dt = new Date((m.end - m.dur) * 1000), d = (dt.getDay() + 6) % 7, h = dt.getHours();   // местное время
+      grid[d][h]++; byHour[h].g++; if (m.win) byHour[h].w++;
+    }
+    const max = Math.max(...grid.flat());
+    const cells = days.map((dn, d) => `<span>${dn}</span>` + grid[d].map((v, h) =>
+      `<span class="c" title="${dn}, ${h}:00 — ${games(v)}" style="background:${v ? `color-mix(in oklab, var(--gold) ${20 + v / max * 80}%, var(--surface-2))` : "var(--surface-2)"}"></span>`).join("")).join("");
+    const hours = `<span></span>` + Array.from({ length: 24 }, (_, h) => `<span class="h">${h % 6 === 0 ? h : ""}</span>`).join("");
+    const slots = [["Утро", 6, 12], ["День", 12, 18], ["Вечер", 18, 24], ["Ночь", 0, 6]].map(([n, a, b]) =>
+      ({ n, ...byHour.slice(a, b).reduce((s, x) => ({ g: s.g + x.g, w: s.w + x.w }), { g: 0, w: 0 }) }));
+    return `<section class="card">
+        <div class="card-head"><h2>Когда ты играешь</h2><span class="muted" style="font-size:12px">последние ${DAYS} дней, твоё время</span></div>
+        <div style="overflow-x:auto"><div class="heat" style="min-width:340px">${hours}${cells}</div></div>
+        <div class="legend"><span><i style="background:var(--surface-2)"></i>0</span><span><i style="background:color-mix(in oklab, var(--gold) 50%, var(--surface-2))"></i>меньше</span><span><i style="background:var(--gold)"></i>${games(max)}</span></div>
+      </section>
+      <section class="card"><div class="card-head"><h2>Винрейт по времени суток</h2></div>
+        <div class="list">${slots.map(s => `<div class="row">
+          <span style="width:56px"><b>${s.n}</b></span>
+          <span class="grow"><span class="bar"><i style="width:${pct(s.w, s.g)}%;background:${pct(s.w, s.g) >= 50 ? "var(--win)" : "var(--loss)"}"></i></span></span>
+          <span class="end" style="width:96px"><b>${s.g ? pct(s.w, s.g) + "%" : "—"}</b> <span class="s">${games(s.g)}</span></span></div>`).join("")}</div>
+      </section>`;
+  },
+  friends() {
+    if (!DATA.friends.length) return empty("За последний месяц игр с друзьями не нашёл.<br>Учитываются только игроки с открытой историей матчей.");
+    return `<section class="card">
+      <div class="card-head"><h2>Друзья за месяц</h2><span class="muted" style="font-size:12px">игры в одной команде</span></div>
+      <div class="list">${DATA.friends.map((f, i) => `
+        <div class="row" style="align-items:stretch">
+          ${f.avatar ? `<span class="hico"><img src="${esc(f.avatar)}" alt="" loading="lazy" onerror="this.remove()"></span>`
+            : `<span class="hico" style="background:${i === 0 ? "var(--gold)" : "var(--surface-2)"};color:${i === 0 ? "var(--on-gold)" : "var(--fg)"};text-shadow:none">${i + 1}</span>`}
+          <span class="grow" style="display:grid;gap:5px">
+            <span style="display:flex;justify-content:space-between;gap:8px"><b class="t">${i === 0 ? "👑 " : ""}${esc(f.name)}</b><span class="s">играли ${ago(f.last)}</span></span>
+            <span class="bar"><i style="width:${pct(f.wins, f.games)}%;background:${pct(f.wins, f.games) >= 50 ? "var(--win)" : "var(--loss)"}"></i></span>
+            <span class="s">${games(f.games)} вместе · ${f.wins} ${plural(f.wins, "победа", "победы", "побед")} · <b style="color:var(--fg)">${pct(f.wins, f.games)}%</b></span>
+          </span></div>`).join("")}</div>
+      <p class="muted" style="margin:0;font-size:12px">Кто не играл с тобой больше месяца, в список не попадает.</p>
+    </section>`;
+  },
+};
+
+function render() { $("#view").innerHTML = VIEWS[current](); bindWinrate(); }
+$("#view").addEventListener("click", e => {
+  const go = e.target.closest("[data-go]"); if (go) return goTab(go.dataset.go);
+  const s = e.target.closest("[data-sort]"); if (s) { state.heroSort = s.dataset.sort; return render(); }
+  const r = e.target.closest("[data-retry]"); if (r) return start();
+  const m = e.target.closest("[data-match]"); if (m) openMatch(+m.dataset.match);
+});
+
+/* ---------- разбор матча ---------- */
+const OPP_SHARE = (mine, list, f) => { const t = list.reduce((s, p) => s + (f(p) || 0), 0); return t > 0 ? (f(mine) || 0) / t * 100 : 0; };
+
+// позиции строго по линиям, как в боте: на линии сравнивается золото на 10-й минуте
+function guessPositions(team) {
+  if (!team.some(p => [1, 2, 3].includes(p.lane))) return;
+  const farm = p => p.leaver ? ((p.roles || []).includes("Carry") ? 1e9 : (p.roles || []).includes("Support") ? -1 : 0)
+    : (p.nw10 ?? p.nw);
+  const free = new Set([1, 2, 3, 4, 5]), rest = [];
+  for (const [lane, roles] of [[1, [1, 5]], [2, [2]], [3, [3, 4]]]) {
+    const ps = team.filter(p => p.lane === lane).sort((a, b) => farm(b) - farm(a));
+    ps.forEach((p, i) => { if (i < roles.length) { p.pos = roles[i]; free.delete(roles[i]); } else rest.push(p); });
+  }
+  rest.push(...team.filter(p => ![1, 2, 3].includes(p.lane)));
+  rest.sort((a, b) => farm(b) - farm(a)).forEach((p, i) => { p.pos = [...free].sort()[i] ?? null; });
+}
+
+async function loadMatch(m) {
+  const [data, items] = await Promise.all([od(`/matches/${m.id}`), constant("items")]);
+  if (!data) throw new Error("Матч не найден");
+  const players = data.players.map(p => ({
+    slot: p.player_slot, radiant: p.player_slot < 128, hero: HERO[p.hero_id]?.name || `#${p.hero_id}`, img: HERO[p.hero_id]?.img,
+    roles: HERO[p.hero_id]?.roles, name: p.personaname || "Аноним", me: p.account_id === ACCOUNT,
+    k: p.kills, d: p.deaths, a: p.assists, gpm: p.gold_per_min, xpm: p.xp_per_min, nw: p.net_worth || p.total_gold || 0,
+    dmg: p.hero_damage || 0, lane: p.lane_role, nw10: (p.gold_t || [])[10], leaver: (p.leaver_status || 0) > 0, raw: p,
+  }));
+  const rad = players.filter(p => p.radiant), dire = players.filter(p => !p.radiant);
+  guessPositions(rad); guessPositions(dire);
+  [rad, dire].forEach(t => t.sort((a, b) => (a.pos || 9) - (b.pos || 9)));
+  const me = players.find(p => p.me) || players.find(p => p.slot === m.slot) || rad[0];
+  const team = me.radiant ? rad : dire, raw = me.raw, rawTeam = team.map(p => p.raw);
+  const teamKills = team.reduce((s, p) => s + p.k, 0);
+  const support = [
+    OPP_SHARE(raw, rawTeam, p => (p.obs_placed || 0) + (p.sen_placed || 0)),
+    OPP_SHARE(raw, rawTeam, p => p.camps_stacked), OPP_SHARE(raw, rawTeam, p => p.stuns)];
+  const final = new Set([0, 1, 2, 3, 4, 5].map(i => raw["item_" + i]).filter(Boolean).map(id => items[id]?.k));
+  const seen = new Set();
+  const timings = (raw.purchase_log || []).filter(b => {
+    const it = Object.values(items).find(x => x.k === b.key);
+    if (!it || seen.has(b.key) || !final.has(b.key) || b.time < 0 || it.cost < 1800) return false;
+    seen.add(b.key); return true;
+  }).slice(0, 6).map(b => { const it = Object.values(items).find(x => x.k === b.key); return { n: it.n, img: it.img, t: b.time }; });
+  return {
+    parsed: !!data.version, radiantWin: data.radiant_win, meRadiant: me.radiant, me, rad, dire,
+    score: [data.radiant_score, data.dire_score], dur: data.duration, ranked: data.lobby_type === 7,
+    gold: data.radiant_gold_adv || null,
+    contrib: [OPP_SHARE(me, team, p => p.nw),
+      Math.min(100, raw.teamfight_participation != null ? raw.teamfight_participation * 100 : (me.k + me.a) / Math.max(1, teamKills) * 100),
+      OPP_SHARE(raw, rawTeam, p => p.tower_damage), OPP_SHARE(raw, rawTeam, p => p.hero_healing), support.reduce((s, v) => s + v, 0) / 3],
+    timings,
+  };
+}
+
+function demoMatch(m) {
+  let seed = m.id % 100000 + 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pool = ["Invoker", "Tidehunter", "Rubick", "Shadow Shaman", "Juggernaut", "Storm Spirit", "Mars", "Earthshaker", "Witch Doctor", "Axe", "Lion", "Puck"];
+  const meRadiant = rnd() < 0.5, radiantWin = meRadiant === m.win;
+  const mk = (radiant) => [1, 2, 3, 4, 5].map(p => {
+    const mine = radiant === meRadiant && p === m.pos, core = p <= 3, won = radiant === radiantWin;
+    const gpm = mine ? m.gpm : Math.round((core ? 500 : 300) + (won ? 50 : -30) + rnd() * 120);
+    return { pos: p, hero: mine ? m.hero : pool[Math.floor(rnd() * pool.length)], name: mine ? "Moseses" : "Игрок", me: mine,
+      k: mine ? m.k : Math.round(rnd() * (core ? 14 : 6)), d: mine ? m.d : Math.round(1 + rnd() * 9), a: mine ? m.a : Math.round(3 + rnd() * 16),
+      gpm, xpm: Math.round(gpm * 1.1), nw: Math.round(gpm * m.dur / 60), dmg: Math.round((core ? 18000 : 7000) + rnd() * 16000) };
+  });
+  const rad = mk(true), dire = mk(false), me = (meRadiant ? rad : dire).find(p => p.me) || rad[0];
+  let g = 0; const gold = [0]; for (let i = 1; i <= m.dur / 60; i++) { g += (rnd() - .5) * 1800 + (radiantWin ? 1 : -1) * i * 18; gold.push(Math.round(g)); }
+  const team = meRadiant ? rad : dire;
+  return { parsed: true, radiantWin, meRadiant, me, rad, dire, dur: m.dur, ranked: m.ranked, gold,
+    score: [rad.reduce((s, p) => s + p.k, 0), dire.reduce((s, p) => s + p.k, 0)],
+    contrib: [OPP_SHARE(me, team, p => p.nw), 45 + rnd() * 30, 20 + rnd() * 35, 2 + rnd() * 10, 3 + rnd() * 8],
+    timings: ["Battle Fury", "Manta Style", "Black King Bar", "Butterfly"].map((n, i) => ({ n, t: Math.round(m.dur * (0.22 + i * 0.17)) })) };
+}
+
+function matchHtml(m, x) {
+  const teamBlock = (name, list, radiant) => `<div class="teams"><span class="team-name" style="color:var(${radiant ? "--win" : "--loss"})">${name}${radiant === x.radiantWin ? " · ПОБЕДА" : ""}</span>
+    <div class="picks">${list.map(p => `<div class="pick${p.me ? " me" : ""}">${p.pos ? `<span class="pos">${p.pos}</span>` : ""}${hico({ name: p.hero, img: p.img }, 40)}<span class="nm">${esc(p.hero)}</span><span class="s muted" style="font-size:10px">${p.k}/${p.d}/${p.a}</span></div>`).join("")}</div></div>`;
+  const rows = list => list.map(p => `<tr class="${p.me ? "me" : ""}"><td>${esc(p.hero)} <span class="muted">${esc(p.name)}</span></td><td>${p.k}/${p.d}/${p.a}</td><td>${fmtK(p.nw)}</td><td>${p.gpm}</td><td>${p.xpm}</td><td>${fmtK(p.dmg)}</td></tr>`).join("");
+  const notParsed = `<p class="muted" style="margin:0;font-size:13px">Появится, когда OpenDota разберёт реплей матча — обычно через несколько минут после игры.</p>`;
+  return `<section class="card" style="justify-items:center;text-align:center">${res(x.meRadiant === x.radiantWin)}
+      <div class="score"><span class="rad">${x.score[0]}</span><span class="muted" style="font-size:16px">${fmtTime(x.dur)}</span><span class="dire">${x.score[1]}</span></div>
+      <span class="muted" style="font-size:13px">${esc(x.me.hero)}${x.me.pos ? ` · ${POS[x.me.pos]} (pos ${x.me.pos})` : ""} · ${x.ranked ? "рейтинг" : "обычная"}</span></section>
+    <section class="card">${teamBlock("СИЛЫ СВЕТА", x.rad, true)}${teamBlock("СИЛЫ ТЬМЫ", x.dire, false)}</section>
+    <section class="card"><div class="card-head"><h2>Преимущество по золоту</h2><span class="muted" style="font-size:12px">по минутам</span></div>${x.gold ? goldChart(x.gold) : notParsed}</section>
+    <div class="grid2">
+      <section class="card"><div class="card-head"><h2>Вклад в игру</h2><span class="muted" style="font-size:12px">доля от команды</span></div>${x.parsed ? radar(x.contrib) : notParsed}</section>
+      <section class="card"><div class="card-head"><h2>Тайминги предметов</h2></div>
+        ${x.timings.length ? `<div class="list">${x.timings.map(it => `<div class="row">${it.img ? `<span class="hico" style="background:var(--surface-2)"><img src="${CDN}${esc(it.img)}" alt="" loading="lazy" onerror="this.remove()"></span>` : `<span class="hico" style="background:var(--surface-2);color:var(--gold);text-shadow:none;font-size:10px">${esc(it.n.split(" ").map(w => w[0]).join(""))}</span>`}<span class="grow"><span class="t">${esc(it.n)}</span><div class="bar" style="margin-top:6px"><i style="width:${it.t / x.dur * 100}%"></i></div></span><span class="end"><b>${fmtTime(it.t)}</b></span></div>`).join("")}</div>
+        <span class="muted" style="font-size:12px">Полоска — момент покупки от начала до конца матча.</span>` : x.parsed ? `<p class="muted" style="margin:0;font-size:13px">Дорогих предметов в финальном билде нет.</p>` : notParsed}
+      </section>
+    </div>
+    <section class="card"><div class="card-head"><h2>Все игроки</h2></div>
+      <div class="table-scroll"><table><thead><tr><th>Герой</th><th>K/D/A</th><th>NW</th><th>GPM</th><th>XPM</th><th>Урон</th></tr></thead>
+        <tbody><tr class="team-sep"><td colspan="6" style="color:var(--win)">Силы Света</td></tr>${rows(x.rad)}
+        <tr class="team-sep"><td colspan="6" style="color:var(--loss)">Силы Тьмы</td></tr>${rows(x.dire)}</tbody></table></div></section>`;
+}
+
+async function openMatch(id) {
+  const m = DATA.matches.find(x => x.id === id), sheet = $("#sheet");
+  sheet.innerHTML = `<div class="wrap"><div class="sheet-top"><button class="back" id="back">← Назад</button><span class="muted" style="font-size:12px">Матч ${m.id} · ${ago(m.end)}</span></div>
+    <div id="mbody" style="display:grid;gap:14px;padding-bottom:40px"><div class="skel"></div><div class="skel"></div></div></div>`;
+  sheet.hidden = false; sheet.scrollTop = 0; document.body.style.overflow = "hidden";
+  $("#back").addEventListener("click", closeMatch); tg?.BackButton?.show();
+  try {
+    const x = m.demo ? demoMatch(m) : await loadMatch(m);
+    if (sheet.hidden) return;
+    $("#mbody").innerHTML = matchHtml(m, x);
+    if (x.gold) bindGold(x.gold);
+  } catch (err) {
+    $("#mbody").innerHTML = `<section class="card"><div class="state">Не получилось загрузить матч: ${esc(err.message)}.<button class="btn" id="mretry">Повторить</button></div></section>`;
+    $("#mretry").addEventListener("click", () => openMatch(id));
+  }
+}
+function closeMatch() { $("#sheet").hidden = true; document.body.style.overflow = ""; tg?.BackButton?.hide(); }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) closeMatch(); });
+
+/* ---------- Telegram и запуск ---------- */
+const tg = window.Telegram?.WebApp;
+if (tg && tg.initData !== undefined) {
+  tg.ready(); tg.expand();
+  tg.BackButton?.onClick(closeMatch);
+  if (tg.colorScheme) document.documentElement.dataset.theme = tg.colorScheme;   // тема Telegram
+}
+
+async function start() {
+  renderTabs();
+  $("#view").innerHTML = `<div class="skel"></div><div class="skel"></div>`;
+  try {
+    DATA = DEMO ? loadDemo() : await loadReal();
+    renderHead();
+    if (DATA.profile.private) {
+      $("#view").innerHTML = empty("Профиль скрыт или матчей не видно.<br>Включи в Dota 2 «Общедоступная история матчей» и открой статистику снова.");
+      return;
+    }
+    render();
+  } catch (err) {
+    $("#view").innerHTML = `<section class="card"><div class="state">Не получилось загрузить статистику: ${esc(err.message)}.<button class="btn" data-retry="1">Повторить</button></div></section>`;
+  }
+}
+start();
+</script>
+</body>
+</html>

@@ -12,6 +12,9 @@ OPENDOTA_API_KEY = os.getenv("OPENDOTA_API_KEY", "")  # необязательн
 # Telegram ID владельца бота: ему принадлежат паки эмодзи героев/предметов/рангов
 OWNER_ID = int(os.getenv("OWNER_ID") or 0)
 
+# Адрес мини-приложения со статистикой (webapp/ на Cloudflare Pages и т.п.); пусто — кнопки нет
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
+
 # Иконки на кнопках (премиум-эмодзи); 0 — выключить
 BUTTON_ICONS = os.getenv("BUTTON_ICONS", "1") != "0"
 

@@ -64,6 +64,7 @@ DEFAULTS = {
     "share": ("🔗", "5375129357373165375"),
     "help": ("❗", "5467928559664242360"),
     "more": ("📊", "5431577498364158238"),
+    "admin": ("👑", "5467406098367521267"),
 }
 
 # тематические значки: ключ -> иконка предмета Dota 2 из пака бота (custom_packs, emoji_map.json);
@@ -88,6 +89,7 @@ THEMED = {
     "share": "item:smoke_of_deceit",
     "help": "item:clarity",
     "more": "item:gem",
+    "admin": "item:ultimate_scepter",
 }
 
 _override: dict[str, list[str]] = {}
