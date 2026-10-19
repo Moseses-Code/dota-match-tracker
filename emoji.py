@@ -1,7 +1,7 @@
 """Эмодзи для сообщений.
 
-Оформление — анимированные эмодзи из официального пака Telegram «Animated Emoji» (RestrictedEmoji).
-Иконки героев, предметов и медалей — из собственных паков бота (их создаёт custom_packs.py).
+Оформление - анимированные эмодзи из официального пака Telegram «Animated Emoji» (RestrictedEmoji).
+Иконки героев, предметов и медалей - из собственных паков бота (их создаёт custom_packs.py).
 Премиум-эмодзи работают, только если у владельца бота есть Telegram Premium (Bot API 9.4+).
 Любой ключ можно переопределить в emoji.json (ID узнаётся командой /emoji).
 """
@@ -71,17 +71,17 @@ DEFAULTS = {
 }
 
 # тематические значки: ключ -> иконка предмета Dota 2 из пака бота (custom_packs, emoji_map.json);
-# если иконки нет — обычный эмодзи из DEFAULTS
+# если иконки нет - обычный эмодзи из DEFAULTS
 THEMED = {
-    "damage": "item:greater_crit",      # урон — Daedalus
+    "damage": "item:greater_crit",      # урон - Daedalus
     "heal": "item:guardian_greaves",    # лечение
     "fights": "item:blink",             # драки
     "wards": "item:ward_observer",
     "lane": "item:tango",               # линия
     "timing": "item:black_king_bar",    # тайминги предметов
     "streak": "item:bloodstone",        # серии убийств
-    "death": "item:aegis",              # смерти и выкупы — Aegis
-    "friends": "item:manta",            # друзья — Manta Style (иллюзии-копии)
+    "death": "item:aegis",              # смерти и выкупы - Aegis
+    "friends": "item:manta",            # друзья - Manta Style (иллюзии-копии)
     "games": "item:tpscroll",
     "victory": "item:aegis",
     "winrate": "item:aegis",
@@ -107,7 +107,7 @@ def load():
     global _override
     if EMOJI_FILE.exists():
         data = json.loads(EMOJI_FILE.read_text("utf-8"))
-        # значение — один ID или список ID (слово из нескольких эмодзи, например WIN)
+        # значение - один ID или список ID (слово из нескольких эмодзи, например WIN)
         _override = {k: [str(x) for x in (v if isinstance(v, list) else [v])]
                      for k, v in data.items() if v and not k.startswith("_")}
 

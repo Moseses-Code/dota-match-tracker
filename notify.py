@@ -30,13 +30,13 @@ def app_button(user, text="Открыть статистику") -> InlineKeyboa
 async def send(bot: Bot, user, text: str, kb=None):
     try:
         await bot.send_message(user["chat_id"], text, reply_markup=kb)
-    except TelegramBadRequest:   # премиум-эмодзи не приняты — с обычными
+    except TelegramBadRequest:   # премиум-эмодзи не приняты - с обычными
         await bot.send_message(user["chat_id"], strip_custom(text), reply_markup=kb)
 
 
 async def send_rank_up(bot: Bot, user, old: int, new: int):
     what = "новая медаль" if new // 10 != old // 10 else "новая звезда"
-    await send(bot, user, f"{e('new_rank')} <b>Поздравляю — {what}!</b>\n\n"
+    await send(bot, user, f"{e('new_rank')} <b>Поздравляю - {what}!</b>\n\n"
                           f"{rank_e(old)} {rank_name(old)}  →  {rank_e(new)} <b>{rank_name(new)}</b>\n\n"
                           "Так держать 💪")
 
@@ -44,19 +44,19 @@ async def send_rank_up(bot: Bot, user, old: int, new: int):
 async def send_tilt(bot: Bot, user, streak: int):
     await send(bot, user,
                f"{e('tilt')} <b>{streak} {plural(streak, 'поражение', 'поражения', 'поражений')} подряд</b>\n\n"
-               "Бывает у всех. Короткий перерыв — 15 минут, вода, размяться — часто помогает лучше, "
+               "Бывает у всех. Короткий перерыв - 15 минут, вода, размяться - часто помогает лучше, "
                "чем ещё одна игра на эмоциях.\n\n"
                "<i>Это предупреждение можно выключить в /settings.</i>")
 
 
 async def maybe_weekly(bot: Bot, api: Api, db: DB):
-    """Итоги недели: в воскресенье после WEEKLY_HOUR — всем, кто их ещё не получил на этой неделе."""
+    """Итоги недели: в воскресенье после WEEKLY_HOUR - всем, кто их ещё не получил на этой неделе."""
     now = datetime.now(TZ)
     if now.weekday() != 6 or now.hour < WEEKLY_HOUR:
         return
     since = int(now.replace(hour=WEEKLY_HOUR, minute=0, second=0, microsecond=0).timestamp())   # уже отправлено сегодня?
     for user in await db.weekly_due(since):
-        await db.update_user(user["tg_id"], weekly_sent=int(time.time()))   # даже если не играл — не спрашиваем снова
+        await db.update_user(user["tg_id"], weekly_sent=int(time.time()))   # даже если не играл - не спрашиваем снова
         try:
             text = await weekly_text(api, user)
             if text:
@@ -97,10 +97,10 @@ async def weekly_text(api: Api, user) -> str | None:
         delta = (rw - (len(ranked) - rw)) * MMR_STEP
         lines.append(f"{e('rank')} Рейтинг: {rw}–{len(ranked) - rw} · MMR <b>{'+' if delta >= 0 else '−'}{abs(delta)}</b>")
     lines[-1] += "</blockquote>"
-    lines += [f"{e('fav')} Герой недели: {hero(fav)} — {fav_games} {plural(fav_games, 'игра', 'игры', 'игр')}, "
+    lines += [f"{e('fav')} Герой недели: {hero(fav)} - {fav_games} {plural(fav_games, 'игра', 'игры', 'игр')}, "
               f"{round(fav_wins / fav_games * 100)}% побед",
               f"{e('streak')} Лучший матч: {match_line(best)}"]
     if worst is not best:
         lines.append(f"{e('death')} Худший матч: {match_line(worst)}")
-    lines.append("\n<i>Подробности — в приложении «Статистика».</i>")
+    lines.append("\n<i>Подробности - в приложении «Статистика».</i>")
     return "\n".join(lines)

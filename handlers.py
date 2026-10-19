@@ -27,7 +27,7 @@ router = Router()
 
 STEAM64_BASE = 76561197960265728
 
-# у кнопок меню иконки — премиум-эмодзи, поэтому в тексте эмодзи нет
+# у кнопок меню иконки - премиум-эмодзи, поэтому в тексте эмодзи нет
 BTN_LAST = "Последний матч"
 BTN_HISTORY = "Мои матчи"
 BTN_PROFILE = "Профиль"
@@ -50,14 +50,14 @@ MENU_ROWS = [[(BTN_LAST, "last", GREEN)],
 
 def menu(plain: bool = False, owner: bool = False) -> ReplyKeyboardMarkup:
     """Нижнее меню. Собирается при отправке: иконки предметов загружаются после старта бота.
-    plain — без иконок и цвета, если Telegram не примет оформление; owner — с кнопкой админки."""
+    plain - без иконок и цвета, если Telegram не примет оформление; owner - с кнопкой админки."""
     layout = MENU_ROWS + ([[(BTN_ADMIN, "admin", None)]] if owner else [])
     rows = [[rb(text) if plain else rb(text, key, style) for text, key, style in row] for row in layout]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 async def answer_menu(msg: Message, text: str):
-    """Ответ с нижним меню; если Telegram не принял иконки/цвет — с простым меню."""
+    """Ответ с нижним меню; если Telegram не принял иконки/цвет - с простым меню."""
     owner = is_owner(msg.chat.id)
     try:
         await msg.answer(text, reply_markup=menu(owner=owner))
@@ -67,7 +67,7 @@ async def answer_menu(msg: Message, text: str):
 
 
 def btn(name: str):
-    """Фильтр кнопки меню — и новый текст, и старый."""
+    """Фильтр кнопки меню - и новый текст, и старый."""
     return F.text.in_({name} | {old for old, new in OLD_BTN.items() if new == name})
 
 
@@ -108,45 +108,45 @@ def help_text() -> str:
         f"{e('kda')} KDA, {e('gpm')} GPM, {e('xpm')} XPM, {e('creeps')} крипы и {e('nw')} нетворс "
         f"в сравнении со средним по твоему рангу и финальный билд.\n\n"
         "<b>Команды</b>\n"
-        "/last — последний матч · /match <code>ID</code> — любой матч\n"
-        "/history — мои матчи · /friends — с кем играл за месяц\n"
-        "/profile — профиль · /mmr <code>2400</code> — указать MMR\n"
-        "/invite — позвать друга · /settings — настройки\n"
-        "/unlink — отвязать аккаунт\n\n"
+        "/last - последний матч · /match <code>ID</code> - любой матч\n"
+        "/history - мои матчи · /friends - с кем играл за месяц\n"
+        "/profile - профиль · /mmr <code>2400</code> - указать MMR\n"
+        "/invite - позвать друга · /settings - настройки\n"
+        "/unlink - отвязать аккаунт\n\n"
         f"{e('warn')} В Dota 2 должна быть включена <b>«Общедоступная история матчей»</b>.\n\n"
-        "<i>Бот хранит твой Telegram и Dota ID, ник и историю отправленных отчётов — только для работы бота. "
+        "<i>Бот хранит твой Telegram и Dota ID, ник и историю отправленных отчётов - только для работы бота. "
         "Удалить данные: /unlink.</i>\n\n"
         "Есть вопрос или идея? Жми кнопку ниже 👇"
     )
 
 
 def welcome_text(user) -> str:
-    """Приветствие после привязки аккаунта: что умеет бот и что подробнее — в приложении."""
+    """Приветствие после привязки аккаунта: что умеет бот и что подробнее - в приложении."""
     name = escape(user["persona"] or "")
     return (
         f"{e('crown')} <b>Готово{', ' + name if name else ''}!</b> Теперь я слежу за твоими играми.\n\n"
         "<b>Что я умею</b>\n"
-        f"{e('last')} <b>Отчёт после каждой игры</b> — сам, через несколько минут после матча: драфт, KDA, GPM, "
+        f"{e('last')} <b>Отчёт после каждой игры</b> - сам, через несколько минут после матча: драфт, KDA, GPM, "
         "XPM, нетворс, позиция, сравнение со средним по твоему рангу и финальный билд.\n"
-        f"{e('more')} <b>«Подробнее»</b> под отчётом — разбор матча: урон, лечение, участие в драках, варды, "
+        f"{e('more')} <b>«Подробнее»</b> под отчётом - разбор матча: урон, лечение, участие в драках, варды, "
         "итог линии, тайминги предметов.\n"
-        f"{e('history')} <b>«Мои матчи»</b> — последние игры, любую можно открыть.\n"
-        f"{e('friends')} <b>«Друзья»</b> — с кем играешь чаще всего и как с ними побеждаешь.\n"
-        f"{e('rank')} <b>Медаль и MMR</b> — укажи свой: /mmr <code>4200</code>\n"
-        f"{e('settings')} <b>«Настройки»</b> — о каких играх присылать отчёты, итоги недели, "
+        f"{e('history')} <b>«Мои матчи»</b> - последние игры, любую можно открыть.\n"
+        f"{e('friends')} <b>«Друзья»</b> - с кем играешь чаще всего и как с ними побеждаешь.\n"
+        f"{e('rank')} <b>Медаль и MMR</b> - укажи свой: /mmr <code>4200</code>\n"
+        f"{e('settings')} <b>«Настройки»</b> - о каких играх присылать отчёты, итоги недели, "
         "предупреждение о серии поражений.\n\n"
-        f"{e('winrate')} <b>Ещё больше — в приложении «Статистика»</b> (кнопка слева от поля ввода): графики "
+        f"{e('winrate')} <b>Ещё больше - в приложении «Статистика»</b> (кнопка слева от поля ввода): графики "
         "винрейта, все матчи с разбором, герои и позиции за любой период, когда ты играешь лучше всего.\n\n"
-        "Сыграй матч — отчёт придёт сам 👇"
+        "Сыграй матч - отчёт придёт сам 👇"
     )
 
 
 def settings_view(user) -> tuple[str, InlineKeyboardMarkup]:
     mode = user["report_mode"] or "all"
     text = (f"{e('settings')} <b>Настройки</b>\n\n"
-            "<b>Отчёты после игры</b> — о каких матчах присылать.\n"
-            "<b>Итоги недели</b> — по воскресеньям в 20:00 (МСК): матчи, винрейт, MMR, герой недели.\n"
-            "<b>Серия поражений</b> — после 3 поражений подряд предложу сделать перерыв.")
+            "<b>Отчёты после игры</b> - о каких матчах присылать.\n"
+            "<b>Итоги недели</b> - по воскресеньям в 20:00 (МСК): матчи, винрейт, MMR, герой недели.\n"
+            "<b>Серия поражений</b> - после 3 поражений подряд предложу сделать перерыв.")
     on = lambda v: "✅" if v else "⬜"   # noqa: E731
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [ib(name, style=GREEN if key == mode else None, callback_data=f"set:report:{key}") for key, name in REPORT_MODES],
@@ -173,7 +173,7 @@ def setup(api: Api, db: DB):
             ib("Где найти Dota ID?", "wards", BLUE, callback_data="howid")]])
         await msg.answer(
             f"{e('crown')} <b>Dota 2 Match Tracker</b>\n\n"
-            "После каждой игры пришлю отчёт с драфтом и статистикой — "
+            "После каждой игры пришлю отчёт с драфтом и статистикой - "
             "в сравнении со средним по твоему рангу.\n\n"
             f"{e('kda')} KDA   {e('gpm')} GPM   {e('xpm')} XPM   {e('nw')} NW\n\n"
             f"{e('matches')} <b>Пришли свой Dota ID</b> или ссылку на профиль, чтобы начать.",
@@ -211,7 +211,7 @@ def setup(api: Api, db: DB):
                                 rank_tier=player.get("rank_tier"),
                                 last=recent[0]["match_id"] if recent else 0,
                                 last_played=(recent[0]["start_time"] + recent[0]["duration"]) if recent else 0)
-        note = "" if recent else (f"\n\n{e('warn')} Матчей не видно — включи в Dota 2 "
+        note = "" if recent else (f"\n\n{e('warn')} Матчей не видно - включи в Dota 2 "
                                   "<b>«Общедоступная история матчей»</b>.")
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             ib("Да, это я", "ok", GREEN, callback_data="reg:yes"),
@@ -265,7 +265,7 @@ def setup(api: Api, db: DB):
             await db.set_username(user["tg_id"], msg.from_user.username)
 
     async def refresh_menu(msg: Message):
-        """Нажата кнопка старого меню — присылаем новое (Telegram держит клавиатуру, пока не придёт другая)."""
+        """Нажата кнопка старого меню - присылаем новое (Telegram держит клавиатуру, пока не придёт другая)."""
         if msg.text in OLD_BTN:
             await answer_menu(msg, f"{e('ok')} Меню обновлено: добавились «Мои матчи» и «Друзья» 👇")
 
@@ -311,7 +311,7 @@ def setup(api: Api, db: DB):
             await bot.send_message(chat_id, f"{e('warn')} OpenDota не отвечает, попробуй позже.")
             return
         if res == "unparsed":
-            await bot.send_message(chat_id, f"{e('warn')} Подробная статистика появится после разбора матча — "
+            await bot.send_message(chat_id, f"{e('warn')} Подробная статистика появится после разбора матча - "
                                             "попробуй через несколько минут.")
         elif not res:
             await bot.send_message(chat_id, f"{e('warn')} Не нашёл тебя в матче <code>{match_id}</code>.")
@@ -320,7 +320,7 @@ def setup(api: Api, db: DB):
             photo = BufferedInputFile(png, filename=f"details_{match_id}.png")
             try:
                 await bot.send_photo(chat_id, photo, caption=caption)
-            except TelegramBadRequest:   # премиум-эмодзи не приняты — шлём с обычными
+            except TelegramBadRequest:   # премиум-эмодзи не приняты - шлём с обычными
                 await bot.send_photo(chat_id, photo, caption=strip_custom(caption))
 
     @router.message(Command("last"))
@@ -330,7 +330,7 @@ def setup(api: Api, db: DB):
             await send_last(bot, msg.chat.id, user)
 
     async def history_page(user, offset: int):
-        """Список матчей текстом (WIN/LOSS — премиум-эмодзи, в кнопку их не вставить)
+        """Список матчей текстом (WIN/LOSS - премиум-эмодзи, в кнопку их не вставить)
         и под ним цветные кнопки с номерами матчей."""
         acc = user["account_id"]
         rows = await api.match_history(acc, HISTORY_PAGE + 1, offset)
@@ -387,7 +387,7 @@ def setup(api: Api, db: DB):
             return
         try:
             await msg.answer(text, reply_markup=markup)
-        except TelegramBadRequest:   # премиум-эмодзи не приняты — шлём с обычными
+        except TelegramBadRequest:   # премиум-эмодзи не приняты - шлём с обычными
             await msg.answer(strip_custom(text), reply_markup=markup)
 
     @router.callback_query(F.data.startswith("hist:"))
@@ -451,7 +451,7 @@ def setup(api: Api, db: DB):
         text = "\n".join(blocks)
         try:
             await msg.answer(text)
-        except TelegramBadRequest:   # премиум-эмодзи не приняты — шлём с обычными
+        except TelegramBadRequest:   # премиум-эмодзи не приняты - шлём с обычными
             await msg.answer(strip_custom(text))
 
     @router.message(Command("settings"))
@@ -503,7 +503,7 @@ def setup(api: Api, db: DB):
             st = {}
         name = st.get("name") or user["persona"] or "?"
         tier = mmr_to_rank_tier(user["mmr"]) if user["mmr"] else user["rank_tier"]
-        # без указанного MMR — оценка OpenDota, а если её нет — середина медали
+        # без указанного MMR - оценка OpenDota, а если её нет - середина медали
         computed = None
         if not user["mmr"]:
             try:
@@ -515,7 +515,7 @@ def setup(api: Api, db: DB):
         lines = [f"{e('hero')} <b>{escape(name)}</b>",
                  f"{rank_e(tier)} <b>{rank_name(tier)}</b>"
                  + (f" · {user['mmr']} MMR" if user["mmr"] else
-                    (f" · ≈{approx} MMR\n<i>MMR — {src}. Укажи точный: /mmr 4200</i>" if approx
+                    (f" · ≈{approx} MMR\n<i>MMR - {src}. Укажи точный: /mmr 4200</i>" if approx
                      else " · <i>MMR не указан (/mmr)</i>"))]
         if st.get("matches"):
             wr = st["wins"] / st["matches"] * 100
@@ -526,7 +526,7 @@ def setup(api: Api, db: DB):
             for i, (hid, games, wins) in enumerate(st["heroes"]):
                 hname = escape(api.heroes.get(hid, {}).get("localized_name", f"#{hid}"))
                 lines.append(f"{hero_e(hid)} {'<b>' + hname + '</b>' if i == 0 else hname}"
-                             f" — {games} игр · {wins / max(games, 1) * 100:.0f}%")
+                             f" - {games} игр · {wins / max(games, 1) * 100:.0f}%")
         lines += ["", f"ID: <code>{acc}</code>"]
         text = "\n".join(lines)
         rows = [[
@@ -557,10 +557,10 @@ def setup(api: Api, db: DB):
         tier = mmr_to_rank_tier(int(arg))
         await db.update_user(user["tg_id"], mmr=int(arg), rank_tier=tier)
         await update_webapp_button(msg.bot, await db.get_user(user["tg_id"]))
-        await msg.answer(f"{e('ok')} Запомнил: <b>{arg}</b> MMR — это {rank_e(tier)} <b>{rank_name(tier)}</b>.\n"
+        await msg.answer(f"{e('ok')} Запомнил: <b>{arg}</b> MMR - это {rank_e(tier)} <b>{rank_name(tier)}</b>.\n"
                          f"Дальше буду считать ±{MMR_STEP} за рейтинговую игру "
-                         "(это приблизительно — Valve не отдаёт точное изменение). "
-                         "Если разойдётся — просто укажи заново.")
+                         "(это приблизительно - Valve не отдаёт точное изменение). "
+                         "Если разойдётся - просто укажи заново.")
 
     @router.message(Command("unlink"))
     async def unlink_cmd(msg: Message):
@@ -577,7 +577,7 @@ def setup(api: Api, db: DB):
         await cb.message.edit_reply_markup(reply_markup=None)
         if cb.data == "unlink:yes":
             await db.delete_user(cb.from_user.id)
-            await cb.message.answer("Аккаунт отвязан. Чтобы привязать снова — /start")
+            await cb.message.answer("Аккаунт отвязан. Чтобы привязать снова - /start")
         await cb.answer()
 
     @router.message(btn(BTN_SHARE))
@@ -604,7 +604,7 @@ def setup(api: Api, db: DB):
     async def fb_start(cb: CallbackQuery, state: FSMContext):
         await state.set_state(Reg.waiting_feedback)
         markup = InlineKeyboardMarkup(inline_keyboard=[[ib("Отмена", callback_data="fb:cancel")]])
-        await cb.message.answer("✍️ Напиши сообщение — вопрос, идею или ошибку. Я передам его владельцу бота, "
+        await cb.message.answer("✍️ Напиши сообщение - вопрос, идею или ошибку. Я передам его владельцу бота, "
                                 "он сможет ответить тебе прямо здесь.", reply_markup=markup)
         await cb.answer()
 
@@ -645,7 +645,7 @@ def setup(api: Api, db: DB):
     @router.message(Command("emoji"))
     async def emoji_cmd(msg: Message, state: FSMContext):
         await state.set_state(Reg.waiting_emoji)
-        await msg.answer("Отправь сообщение с премиум-эмодзи — я пришлю их ID для файла emoji.json.")
+        await msg.answer("Отправь сообщение с премиум-эмодзи - я пришлю их ID для файла emoji.json.")
 
     @router.message(Reg.waiting_emoji)
     async def emoji_got(msg: Message, state: FSMContext):
@@ -664,7 +664,7 @@ def setup(api: Api, db: DB):
     @router.message(F.text)
     async def fallback(msg: Message):
         if await db.get_user(msg.from_user.id):
-            await answer_menu(msg, "Не знаю такой команды. /help — список команд.")
+            await answer_menu(msg, "Не знаю такой команды. /help - список команд.")
         else:
             await msg.answer("Нажми /start, чтобы привязать аккаунт.")
 

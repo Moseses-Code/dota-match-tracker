@@ -1,7 +1,7 @@
 """Проверка STRATZ-токена и того, какие средние приходят.
 
 Запуск:  python check_stratz.py 74 2 65
-         (герой Invoker = 74, позиция 2, ранг 65 = Властелин V; ID героев — в data/cache/heroes.json)
+         (герой Invoker = 74, позиция 2, ранг 65 = Властелин V; ID героев - в data/cache/heroes.json)
 """
 import asyncio
 import json

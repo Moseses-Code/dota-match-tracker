@@ -27,7 +27,7 @@ def rank_name(rank_tier: int | None, leaderboard: int | None = None) -> str:
 
 
 def mmr_to_rank_tier(mmr: int | None) -> int | None:
-    """MMR -> медаль (rank_tier: десятки — медаль, единицы — звёзды).
+    """MMR -> медаль (rank_tier: десятки - медаль, единицы - звёзды).
 
     Рекрут–Властелин: 770 MMR на медаль, 154 на звезду; Божество: 200 на звезду с 4620; Титан от 5620.
     """
@@ -57,7 +57,7 @@ def rank_tier_range(rank_tier: int | None) -> tuple[int, int | None] | None:
 
 
 def estimate_mmr(rank_tier: int | None) -> int | None:
-    """Примерный MMR по медали — середина диапазона звезды."""
+    """Примерный MMR по медали - середина диапазона звезды."""
     rng = rank_tier_range(rank_tier)
     if not rng:
         return None
@@ -103,7 +103,7 @@ class Player:
     rank_tier: int | None
     lane_role: int | None
     benchmarks: dict
-    leaver: bool = False        # вылетел/покинул игру — его фарм не отражает роль
+    leaver: bool = False        # вылетел/покинул игру - его фарм не отражает роль
     hero_roles: tuple = ()
     position: int | None = None
     position_exact: bool = False
@@ -190,7 +190,7 @@ def parse_match(data: dict, api: Api) -> Match:
 
 
 SAFE, MID, OFF = 1, 2, 3   # lane_role из OpenDota
-# кор и саппорт каждой линии: лёгкая — 1 и 5, мид — 2, сложная — 3 и 4
+# кор и саппорт каждой линии: лёгкая - 1 и 5, мид - 2, сложная - 3 и 4
 LANE_POS = {SAFE: (1, 5), MID: (2, None), OFF: (3, 4)}
 
 
@@ -208,8 +208,8 @@ def _farm(p: Player) -> float:
 def guess_positions(m: Match):
     """Позиции строго по линиям: на каждой линии сравниваются только стоявшие на ней.
 
-    Лёгкая: больше фарм на 10-й минуте — pos 1, меньше — pos 5. Сложная: 3 и 4.
-    Мид — всегда pos 2. Без разбора реплея линий нет — позицию не угадываем
+    Лёгкая: больше фарм на 10-й минуте - pos 1, меньше - pos 5. Сложная: 3 и 4.
+    Мид - всегда pos 2. Без разбора реплея линий нет - позицию не угадываем
     (её может проставить STRATZ).
     """
     for radiant in (True, False):
@@ -245,7 +245,7 @@ async def apply_stratz(m: Match, api: Api):
             f" pickBans {{ heroId isPick isRadiant wasBannedSuccessfully }} }} }}")
     except ApiError as e:
         log.info("STRATZ match: %s", e)
-        try:   # если не прошёл общий запрос — хотя бы позиции
+        try:   # если не прошёл общий запрос - хотя бы позиции
             data = await api.stratz(f"{{ match(id: {m.match_id}) {{ players {{ heroId position }} }} }}")
         except ApiError as e2:
             log.info("STRATZ positions: %s", e2)
@@ -262,7 +262,7 @@ async def apply_stratz(m: Match, api: Api):
     picked = {p.hero_id for p in m.players}
     for pb in match.get("pickBans") or []:
         hid = pb.get("heroId")
-        # в All Pick предложенный бан может не пройти — такие пропускаем
+        # в All Pick предложенный бан может не пройти - такие пропускаем
         if pb.get("isPick") or not hid or pb.get("wasBannedSuccessfully") is False or hid in picked:
             continue
         team = m.bans.setdefault(bool(pb.get("isRadiant")), [])

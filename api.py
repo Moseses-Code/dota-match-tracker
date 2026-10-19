@@ -75,7 +75,7 @@ class Api:
 
     # ---------- OpenDota ----------
     async def od(self, path, method="GET", params=None):
-        # список пар — когда параметр повторяется (project=…&project=…)
+        # список пар - когда параметр повторяется (project=…&project=…)
         params = list(params.items() if isinstance(params, dict) else params or [])
         if OPENDOTA_API_KEY:
             params.append(("api_key", OPENDOTA_API_KEY))
@@ -112,7 +112,7 @@ class Api:
         return await self.od(f"/players/{int(account_id)}/peers", params={"date": days}) or []
 
     async def stratz_recent(self, account_id) -> list[dict]:
-        """Последние матчи из STRATZ (видит открытую историю сразу, OpenDota — с задержкой)."""
+        """Последние матчи из STRATZ (видит открытую историю сразу, OpenDota - с задержкой)."""
         data = await self.stratz(
             f"{{ player(steamAccountId: {int(account_id)}) {{ matches(request: {{take: 5}}) {{"
             f" id startDateTime durationSeconds players(steamAccountId: {int(account_id)}) {{ playerSlot }} }} }} }}"
@@ -125,7 +125,7 @@ class Api:
         return out
 
     async def profile_stats(self, account_id) -> dict:
-        """Имя, аватар, всего матчей, побед и топ героев (STRATZ, запасной вариант — OpenDota)."""
+        """Имя, аватар, всего матчей, побед и топ героев (STRATZ, запасной вариант - OpenDota)."""
         acc = int(account_id)
         if self.has_stratz:
             try:
@@ -163,9 +163,9 @@ class Api:
         """Последние матчи игрока, новые сверху: объединяем STRATZ и OpenDota.
 
         Любой из источников может отставать на несколько матчей, поэтому берём оба,
-        а не только первый ответивший — иначе новый матч не виден, пока его не увидит STRATZ.
-        known_last — для фоновой проверки: если STRATZ уже показал матч новее, OpenDota не спрашиваем,
-        а если нет — спрашиваем не чаще раза в BG_OPENDOTA_EVERY секунд, чтобы не забивать очередь.
+        а не только первый ответивший - иначе новый матч не виден, пока его не увидит STRATZ.
+        known_last - для фоновой проверки: если STRATZ уже показал матч новее, OpenDota не спрашиваем,
+        а если нет - спрашиваем не чаще раза в BG_OPENDOTA_EVERY секунд, чтобы не забивать очередь.
         """
         acc = int(account_id)
         found: dict[int, dict] = {}
@@ -181,7 +181,7 @@ class Api:
                 return sorted(found.values(), key=lambda r: r["match_id"], reverse=True)
         if known_last is not None:
             self._od_checked[acc] = time.monotonic()
-        # просьба обновить историю — в фоне: пользователь её не ждёт, она пригодится к следующему разу
+        # просьба обновить историю - в фоне: пользователь её не ждёт, она пригодится к следующему разу
         task = asyncio.create_task(self._refresh_background(acc))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)

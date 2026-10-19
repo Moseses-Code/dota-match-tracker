@@ -29,7 +29,7 @@ RANK_URL = "https://www.opendota.com/assets/images/dota2/rank_icons/"
 CDN = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/"
 # тематические иконки оформления: ключ emoji.e() -> картинка из Dota 2
 OD = "https://www.opendota.com/assets/images/"
-# ключ -> (url, эмодзи-заглушка, как вписать: "item" — целиком, "crop" — квадрат из центра)
+# ключ -> (url, эмодзи-заглушка, как вписать: "item" - целиком, "crop" - квадрат из центра)
 UI_ICONS = {
     "win": (CDN + "items/aegis.png", "🏆", "item"),
     "kda": (CDN + "items/rapier.png", "⚔️", "item"),
@@ -131,7 +131,7 @@ class Packs:
         while True:
             name = self._name(kind, n)
             size = await self._set_size(name)
-            if size is None:   # пака ещё нет — создаём
+            if size is None:   # пака ещё нет - создаём
                 await self.bot.create_new_sticker_set(
                     user_id=OWNER_ID, name=name, title=f"{title} #{n}" if n > 1 else title,
                     stickers=[sticker], sticker_type="custom_emoji")
@@ -227,7 +227,7 @@ class Packs:
     async def prewarm(self):
         """В фоне загружает всех героев и все медали, чтобы первые отчёты были быстрыми."""
         if not self.enabled:
-            log.info("OWNER_ID не задан — собственные эмодзи (герои/предметы/ранги) отключены")
+            log.info("OWNER_ID не задан - собственные эмодзи (герои/предметы/ранги) отключены")
             return
         try:
             await self.ensure_ui()
