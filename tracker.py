@@ -14,7 +14,7 @@ from service import make_report, send_report, update_webapp_button, webapp_url
 
 log = logging.getLogger(__name__)
 
-ACTIVE_WINDOW = 3 * 3600      # если играл последние 3 часа — проверяем чаще
+ACTIVE_WINDOW = 3 * 3600      # если играл последние 3 часа - проверяем чаще
 GIVE_UP_AFTER = 3 * 3600      # матч так и не появился в OpenDota
 RECHECK_EVERY = 180           # как часто перепроверять матч в очереди
 TILT_AFTER = 3                # предупреждение после стольких поражений подряд
@@ -27,7 +27,7 @@ async def check_user(api: Api, db: DB, user):
     new = sorted((r for r in recent if r["match_id"] > (user["last_match_id"] or 0)),
                  key=lambda r: r["match_id"])
     last_id, last_played = user["last_match_id"] or 0, user["last_played"] or 0
-    if not last_id and recent:   # первый раз видим матчи — старые не присылаем, только запоминаем
+    if not last_id and recent:   # первый раз видим матчи - старые не присылаем, только запоминаем
         new = []
         last_id = max(r["match_id"] for r in recent)
         last_played = max(r.get("start_time", 0) + r.get("duration", 0) for r in recent)
@@ -103,7 +103,7 @@ def wanted(user, data: dict) -> bool:
 
 
 async def update_streak(db: DB, user, data: dict, player_slot: int | None) -> int:
-    """Поражений подряд после этой игры (0 — победа или игрока не нашли)."""
+    """Поражений подряд после этой игры (0 - победа или игрока не нашли)."""
     me = next((p for p in data.get("players", []) if p.get("account_id") == user["account_id"]
                or (player_slot is not None and p.get("player_slot") == player_slot)), None)
     if me is None or data.get("radiant_win") is None:

@@ -1,4 +1,4 @@
-"""Текст отчёта о матче (HTML для Telegram). Идёт подписью к картинке драфта — одним сообщением."""
+"""Текст отчёта о матче (HTML для Telegram). Идёт подписью к картинке драфта - одним сообщением."""
 import time
 from dataclasses import dataclass
 from html import escape
@@ -13,7 +13,7 @@ class MmrInfo:
     ranked: bool
     delta: int | None = None       # ±шаг
     current: int | None = None     # указанный игроком MMR (или примерный, см. approx)
-    approx: bool = False           # MMR не указан — оценка (OpenDota или по медали)
+    approx: bool = False           # MMR не указан - оценка (OpenDota или по медали)
     approx_src: str = "medal"      # opendota | medal
     old_rank: int | None = None
     new_rank: int | None = None
@@ -28,7 +28,7 @@ def fmt_time(sec: int) -> str:
 
 def fmt_num(v: float | None) -> str:
     if v is None:
-        return "—"
+        return "-"
     if abs(v) >= 10000:
         return f"{v / 1000:.1f}k"
     return f"{v:,.0f}".replace(",", " ")
@@ -60,7 +60,7 @@ def line(icon: str, title: str, value: str, mine, avg, avg_txt=None, fallback=""
 
 
 def build_line(p: Player, api: Api) -> str:
-    """Финальный билд иконками предметов (если иконок ещё нет — названиями)."""
+    """Финальный билд иконками предметов (если иконок ещё нет - названиями)."""
     main = [i for i in p.items if i and i in api.items]
     extra = [i for i in (p.neutral, p.enhancement) if i and i in api.items]
 
@@ -70,7 +70,7 @@ def build_line(p: Player, api: Api) -> str:
             return " ".join(icons)
         return ", ".join(escape(api.items[i]["dname"]) for i in ids)
 
-    out = show(main) if main else "—"
+    out = show(main) if main else "-"
     if extra:
         out += "  ┃  " + show(extra)
     return out
@@ -122,11 +122,11 @@ def build_report(m: Match, me: Player, avg: dict | None, mmr: MmrInfo, api: Api,
         legend = (f"<i>моё / среднее · {escape(me.hero_name)} pos {pos} · "
                   f"{BRACKET_NAMES.get(a.get('bracket'), 'все ранги')}</i>")
     else:
-        legend = "<i>топ X% — среди игроков на этом герое</i>"
+        legend = "<i>топ X% - среди игроков на этом герое</i>"
 
     if mmr.approx:
         src = "оценка OpenDota" if mmr.approx_src == "opendota" else "примерно, по медали"
-        rank += f"\n<i>MMR — {src}. Укажи точный: /mmr 4200</i>"
+        rank += f"\n<i>MMR - {src}. Укажи точный: /mmr 4200</i>"
     parts = [head, score, sub, "", hero, rank, "",
              "<blockquote>" + "\n".join(stats) + "</blockquote>", legend, ""]
     if records:

@@ -60,7 +60,7 @@ class DB:
         cur = await self.conn.execute("PRAGMA table_info(users)")
         cols = {r["name"] for r in await cur.fetchall()}
         for col, decl in [("username", "TEXT"),
-                          ("report_mode", "TEXT DEFAULT 'all'"),   # all | noturbo | ranked — о каких играх слать отчёты
+                          ("report_mode", "TEXT DEFAULT 'all'"),   # all | noturbo | ranked - о каких играх слать отчёты
                           ("weekly", "INTEGER DEFAULT 1"),          # итоги недели
                           ("tilt", "INTEGER DEFAULT 1"),            # предупреждение после 3 поражений подряд
                           ("loss_streak", "INTEGER DEFAULT 0"),

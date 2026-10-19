@@ -12,13 +12,13 @@ OPENDOTA_API_KEY = os.getenv("OPENDOTA_API_KEY", "")  # необязательн
 # Telegram ID владельца бота: ему принадлежат паки эмодзи героев/предметов/рангов
 OWNER_ID = int(os.getenv("OWNER_ID") or 0)
 
-# Адрес мини-приложения со статистикой (webapp/ на Cloudflare Pages и т.п.); пусто — кнопки нет
+# Адрес мини-приложения со статистикой (webapp/ на Cloudflare Pages и т.п.); пусто - кнопки нет
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 
-# Порт веб-сервера мини-приложения (Bot-Hosting сам задаёт SERVER_PORT); 0 — не запускать
+# Порт веб-сервера мини-приложения (Bot-Hosting сам задаёт SERVER_PORT); 0 - не запускать
 WEB_PORT = int(os.getenv("WEB_PORT") or os.getenv("SERVER_PORT") or 0)
 
-# Иконки на кнопках (премиум-эмодзи); 0 — выключить
+# Иконки на кнопках (премиум-эмодзи); 0 - выключить
 BUTTON_ICONS = os.getenv("BUTTON_ICONS", "1") != "0"
 
 # Как часто проверять новые матчи (секунды)

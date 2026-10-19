@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 BTN_ADMIN = "Админ"
 USERS_PAGE = 10
-BROADCAST_DELAY = 0.05   # ~20 сообщений в секунду — ниже лимита Telegram (30/с)
+BROADCAST_DELAY = 0.05   # ~20 сообщений в секунду - ниже лимита Telegram (30/с)
 
 
 class Admin(StatesGroup):
@@ -40,12 +40,12 @@ def is_owner(chat_id: int | None) -> bool:
 
 
 def fmt_date(ts: int | None) -> str:
-    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M") if ts else "—"
+    return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M") if ts else "-"
 
 
 def setup(db: DB) -> Router:
     router = Router()
-    # все хендлеры роутера — только для владельца
+    # все хендлеры роутера - только для владельца
     router.message.filter(F.chat.id == OWNER_ID)
     router.callback_query.filter(F.message.chat.id == OWNER_ID)
 
@@ -110,7 +110,7 @@ def setup(db: DB) -> Router:
             buttons.append(nav)
         buttons.append([ib("Назад", callback_data="adm:panel")])
         text = (f"{e('friends')} <b>Пользователи</b> · {offset + 1}–{offset + len(rows)} из {total}\n"
-                "<i>Новые сверху; ⛔ — отписался. Нажми, чтобы открыть карточку.</i>")
+                "<i>Новые сверху; ⛔ - отписался. Нажми, чтобы открыть карточку.</i>")
         await cb.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         await cb.answer()
 
@@ -122,7 +122,7 @@ def setup(db: DB) -> Router:
             return await cb.answer("Пользователь не найден", show_alert=True)
         tier = u["rank_tier"]
         lines = [
-            f"{e('profile')} <b>{escape(u['persona'] or '—')}</b>"
+            f"{e('profile')} <b>{escape(u['persona'] or '-')}</b>"
             + (f"  ·  @{escape(u['username'])}" if u["username"] else ""),
             "<blockquote>"
             f"Telegram ID: <code>{u['tg_id']}</code>\n"
@@ -148,7 +148,7 @@ def setup(db: DB) -> Router:
     async def csv_cb(cb: CallbackQuery, bot: Bot):
         await cb.answer()
         out = io.StringIO()
-        w = csv.writer(out, delimiter=";")   # «;» — Excel в русской локали сразу делит на столбцы
+        w = csv.writer(out, delimiter=";")   # «;» - Excel в русской локали сразу делит на столбцы
         w.writerow(["telegram_id", "username", "dota_id", "ник", "медаль", "mmr", "активен",
                     "зарегистрирован", "последняя игра", "отчётов", "последний отчёт"])
         for u in await db.all_users():
@@ -156,7 +156,7 @@ def setup(db: DB) -> Router:
                         rank_name(u["rank_tier"]), u["mmr"] or "", "да" if u["active"] else "нет",
                         fmt_date(u["created_at"]), fmt_date(u["last_played"]), u["reports"],
                         fmt_date(u["last_report"])])
-        data = out.getvalue().encode("utf-8-sig")   # BOM — чтобы Excel открыл кириллицу
+        data = out.getvalue().encode("utf-8-sig")   # BOM - чтобы Excel открыл кириллицу
         name = f"users_{datetime.now():%Y-%m-%d}.csv"
         await bot.send_document(cb.message.chat.id, BufferedInputFile(data, filename=name),
                                 caption=f"{e('games')} Пользователи бота")
@@ -167,7 +167,7 @@ def setup(db: DB) -> Router:
         await state.set_state(Admin.waiting_broadcast)
         await cb.message.answer(
             f"{e('share')} <b>Рассылка</b>\n\n"
-            "Пришли сообщение для рассылки — текст, фото с подписью, видео, что угодно. "
+            "Пришли сообщение для рассылки - текст, фото с подписью, видео, что угодно. "
             "Оформление и премиум-эмодзи сохранятся. Перед отправкой покажу, как оно выглядит.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[ib("Отмена", callback_data="adm:bc:cancel")]]))
         await cb.answer()
@@ -210,7 +210,7 @@ def setup(db: DB) -> Router:
                 try:
                     try:
                         await bot.copy_message(c["chat_id"], from_chat, msg_id, reply_markup=markup)
-                    except TelegramBadRequest:   # меню с иконками не принято — без меню
+                    except TelegramBadRequest:   # меню с иконками не принято - без меню
                         await bot.copy_message(c["chat_id"], from_chat, msg_id)
                     sent += 1
                 except TelegramRetryAfter as err:

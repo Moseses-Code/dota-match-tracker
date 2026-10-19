@@ -49,7 +49,7 @@ async def _load(api: Api, data: dict, user, player_slot: int | None = None):
 
 
 async def make_details(api: Api, user, match_id: int):
-    """Подробная статистика: (png, caption), "unparsed" — матч ещё не разобран, None — нет игрока."""
+    """Подробная статистика: (png, caption), "unparsed" - матч ещё не разобран, None - нет игрока."""
     data = await api.match(match_id)
     if not data:
         return None
@@ -64,7 +64,7 @@ async def make_details(api: Api, user, match_id: int):
 
 def fit_to_medal(mmr: int, rank_tier: int | None) -> int:
     """Самокорректировка: шаг ±25 приблизительный, и счёт бота может уйти от реальной медали.
-    Если ушёл — подтягиваем MMR к ближайшей границе диапазона медали из матча."""
+    Если ушёл - подтягиваем MMR к ближайшей границе диапазона медали из матча."""
     rng = rank_tier_range(rank_tier)
     if not rng:
         return mmr
@@ -82,7 +82,7 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
     if me is None:
         return None
 
-    # MMR: если игрок указал свой MMR — ведём счёт и ранг считаем по нему
+    # MMR: если игрок указал свой MMR - ведём счёт и ранг считаем по нему
     mmr = MmrInfo(ranked=m.is_ranked, old_rank=user["rank_tier"])
     if m.is_ranked:
         won = me.is_radiant == m.radiant_win
@@ -94,7 +94,7 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         new_rank = mmr_to_rank_tier(mmr.current)
         mmr.old_rank = mmr_to_rank_tier(user["mmr"])
     else:
-        # медаль из самого матча свежее, чем в профиле OpenDota; из профиля — оценка MMR от OpenDota
+        # медаль из самого матча свежее, чем в профиле OpenDota; из профиля - оценка MMR от OpenDota
         profile = await api.player(user["account_id"]) or {}
         new_rank = me.rank_tier or profile.get("rank_tier")
         mmr.leaderboard = profile.get("leaderboard_rank")
@@ -116,7 +116,7 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
     records = await hero_records(api, user["account_id"], me, data)
     html = build_report(m, me, avg, mmr, api, records)
     png = await build_draft_image(m, me.account_id, api)
-    # новая медаль или звезда — для отдельного поздравления (только в отчётах после игры)
+    # новая медаль или звезда - для отдельного поздравления (только в отчётах после игры)
     rank_up = (mmr.old_rank, new_rank) if (count_mmr and mmr.old_rank and new_rank and new_rank > mmr.old_rank) else None
     return png, html, short_caption(m, me), m.match_id, {"rank_up": rank_up}
 
@@ -147,7 +147,7 @@ async def hero_records(api: Api, account_id: int, me, data: dict) -> list[str]:
 
 
 def webapp_url(user) -> str | None:
-    """Ссылка на мини-приложение: Dota ID и MMR (если указан) — в параметрах."""
+    """Ссылка на мини-приложение: Dota ID и MMR (если указан) - в параметрах."""
     if not WEBAPP_URL:
         return None
     url = f"{WEBAPP_URL}/?id={user['account_id']}"
@@ -175,11 +175,11 @@ async def send_report(bot: Bot, chat_id: int, png: bytes, html: str, caption: st
         try:
             await send(chat_id, text, **kw)
         except TelegramBadRequest as e:
-            # например, премиум-эмодзи недоступны (у владельца нет Premium) — шлём с обычными
+            # например, премиум-эмодзи недоступны (у владельца нет Premium) - шлём с обычными
             log.warning("send failed (%s), retrying without custom emoji", e)
             await send(chat_id, strip_custom(text), **kw)
 
-    # одно сообщение: картинка драфта + отчёт подписью (лимит подписи — 1024 символа)
+    # одно сообщение: картинка драфта + отчёт подписью (лимит подписи - 1024 символа)
     if _visible_len(html) <= 1024:
         await safe(lambda c, t, **kw: bot.send_photo(c, photo, caption=t, **kw), html, reply_markup=kb)
     else:
