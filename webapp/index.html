@@ -474,7 +474,37 @@ function bindGold(series) {
 /* ---------- вкладки ---------- */
 const TABS = [["overview", "Обзор"], ["matches", "Матчи"], ["heroes", "Герои"], ["roles", "Роли"], ["activity", "Активность"], ["friends", "Друзья"]];
 let current = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : "overview";
-const state = { heroSort: "games" };
+const state = { period: { heroes: "30", roles: "30" } };
+const PERIODS = [["30", "Месяц"], ["90", "3 месяца"], ["365", "Год"], ["all", "Всё время"]];
+const periodChips = kind => `<div class="chips" role="group" aria-label="Период">${PERIODS.map(([k, n]) =>
+  `<button class="chip" aria-pressed="${state.period[kind] === k}" data-period="${kind}:${k}">${n}</button>`).join("")}</div>`;
+
+/* данные вкладок «Герои» и «Роли» за выбранный период: undefined — грузится, {error} — ошибка */
+const periodCache = {};
+function periodData(kind, period) {
+  const key = kind + ":" + period;
+  if (key in periodCache) return periodCache[key];
+  periodCache[key] = undefined;
+  loadPeriod(kind, period).then(v => { periodCache[key] = v; }, err => { periodCache[key] = { error: err.message }; })
+    .then(() => { if (current === kind && state.period[kind] === period) render(); });
+  return undefined;
+}
+async function loadPeriod(kind, period) {
+  const date = period === "all" ? "" : `date=${period}`;
+  if (kind === "heroes") {
+    if (DEMO) return heroStats().slice(0, 5).map(h => ({ ...h, last: null }));
+    const rows = await od(`/players/${ACCOUNT}/heroes${date ? "?" + date : ""}`) || [];
+    return rows.filter(r => r.games > 0).sort((a, b) => b.games - a.games).slice(0, 5).map(r => {
+      const h = HERO[r.hero_id] || { name: `#${r.hero_id}` };
+      return { name: h.name, img: h.img, games: r.games, wins: r.win || 0, wr: pct(r.win || 0, r.games), last: r.last_played };
+    });
+  }
+  if (DEMO || period === "30") return DATA.matches;   // месяц уже загружен
+  const list = await od(`/players/${ACCOUNT}/matches?${date}&project=lane_role&project=last_hits&project=duration` +
+                        `&project=player_slot&project=radiant_win`) || [];
+  return list.map(r => { const m = { win: (r.player_slot < 128) === r.radiant_win, lane: r.lane_role, lh: r.last_hits || 0, dur: r.duration };
+    m.pos = roughPos(m); return m; });
+}
 function renderTabs() {
   $("#tabs").innerHTML = TABS.map(([id, name]) =>
     `<button class="tab" role="tab" id="tab-${id}" aria-selected="${id === current}" data-tab="${id}">${name}</button>`).join("");
@@ -544,23 +574,34 @@ const VIEWS = {
         </button>`).join("")}</div></section>`;
   },
   heroes() {
-    if (!DATA.matches.length) return empty("Матчей за последний месяц нет.");
-    const sort = state.heroSort;
-    const list = heroStats().sort((a, b) => sort === "wr" ? b.wr - a.wr || b.games - a.games : sort === "kda" ? b.kda - a.kda : b.games - a.games);
+    const p = state.period.heroes, list = periodData("heroes", p);
     return `<section class="card">
-      <div class="card-head"><h2>Герои</h2>
-        <div class="chips" role="group" aria-label="Сортировка">${[["games", "по играм"], ["wr", "по винрейту"], ["kda", "по KDA"]].map(([k, n]) =>
-          `<button class="chip" aria-pressed="${sort === k}" data-sort="${k}">${n}</button>`).join("")}</div></div>
-      <div class="list">${list.map(h => heroRow(h, true)).join("")}</div></section>`;
+      <div class="card-head"><h2>Самые играемые герои</h2></div>
+      ${periodChips("heroes")}
+      ${list === undefined ? `<div class="skel" style="height:220px"></div>`
+        : list.error ? `<div class="state">Не получилось загрузить: ${esc(list.error)}.<button class="btn" data-reload="heroes">Повторить</button></div>`
+        : !list.length ? `<div class="state">За этот период матчей нет.</div>`
+        : `<div class="list">${list.map(h => `<div class="row">${hico(h)}
+            <span class="grow" style="display:grid;gap:5px"><span style="display:flex;justify-content:space-between;gap:8px">
+              <b class="t">${esc(h.name)}</b><span class="s">${games(h.games)} · ${h.wins} ${plural(h.wins, "победа", "победы", "побед")}</span></span>
+              <span class="bar"><i style="width:${h.wr}%;background:${h.wr >= 50 ? "var(--win)" : "var(--loss)"}"></i></span>
+              ${h.last ? `<span class="s">последняя игра ${ago(h.last)}</span>` : ""}</span>
+            <span class="end" style="width:48px"><b>${h.wr}%</b><br><span class="s">винрейт</span></span></div>`).join("")}</div>`}
+    </section>`;
   },
   roles() {
-    const known = DATA.matches.filter(m => m.pos);
-    if (!known.length) return empty("Позиции видны только в разобранных матчах — их пока нет.");
-    const rows = [1, 2, 3, 4, 5].map(p => { const ms = known.filter(m => m.pos === p); return { p, games: ms.length, wins: ms.filter(m => m.win).length }; });
+    const p = state.period.roles, all = periodData("roles", p);
+    if (all === undefined || all.error) return `<section class="card"><div class="card-head"><h2>Позиции</h2></div>${periodChips("roles")}
+      ${all ? `<div class="state">Не получилось загрузить: ${esc(all.error)}.<button class="btn" data-reload="roles">Повторить</button></div>` : `<div class="skel" style="height:220px"></div>`}</section>`;
+    const known = all.filter(m => m.pos);
+    if (!known.length) return `<section class="card"><div class="card-head"><h2>Позиции</h2></div>${periodChips("roles")}
+      <div class="state">Позиции видны только в разобранных матчах — за этот период их нет.</div></section>`;
+    const rows = [1, 2, 3, 4, 5].map(n => { const ms = known.filter(m => m.pos === n); return { p: n, games: ms.length, wins: ms.filter(m => m.win).length }; });
     const maxG = Math.max(...rows.map(r => r.games));
     const best = rows.filter(r => r.games >= 3).sort((a, b) => pct(b.wins, b.games) - pct(a.wins, a.games))[0];
     return `<section class="card">
       <div class="card-head"><h2>Позиции</h2>${best ? `<span style="font-size:13px">Лучшая: <b class="delta-up">${POS[best.p]}</b></span>` : ""}</div>
+      ${periodChips("roles")}
       <div class="list">${rows.map(r => `
         <div class="row" style="align-items:stretch">
           <span class="label" style="width:44px;padding-top:2px">POS ${r.p}</span>
@@ -569,7 +610,7 @@ const VIEWS = {
             <span class="bar"><i style="width:${maxG ? r.games / maxG * 100 : 0}%"></i></span></span>
           <span class="end" style="width:64px"><b class="${pct(r.wins, r.games) >= 50 ? "delta-up" : "delta-down"}">${r.games ? pct(r.wins, r.games) + "%" : "—"}</b><br><span class="s">винрейт</span></span>
         </div>`).join("")}</div>
-      <p class="muted" style="margin:0;font-size:12px">По ${games(known.length)} из ${DATA.matches.length}: позиция видна только в разобранных матчах — по линии и фарму.</p>
+      <p class="muted" style="margin:0;font-size:12px">По ${games(known.length)} из ${all.length}: позиция видна только в разобранных матчах — по линии и фарму.</p>
     </section>`;
   },
   activity() {
@@ -621,7 +662,10 @@ const VIEWS = {
 function render() { $("#view").innerHTML = VIEWS[current](); bindWinrate(); }
 $("#view").addEventListener("click", e => {
   const go = e.target.closest("[data-go]"); if (go) return goTab(go.dataset.go);
-  const s = e.target.closest("[data-sort]"); if (s) { state.heroSort = s.dataset.sort; return render(); }
+  const pc = e.target.closest("[data-period]");
+  if (pc) { const [kind, period] = pc.dataset.period.split(":"); state.period[kind] = period; return render(); }
+  const rl = e.target.closest("[data-reload]");
+  if (rl) { delete periodCache[rl.dataset.reload + ":" + state.period[rl.dataset.reload]]; return render(); }
   const r = e.target.closest("[data-retry]"); if (r) return start();
   if (e.target.closest("[data-retry-friends]")) { DATA.friends = null; render(); return loadFriends(); }
   const m = e.target.closest("[data-match]"); if (m) openMatch(+m.dataset.match);
