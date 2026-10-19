@@ -28,6 +28,9 @@ POLL_IDLE = int(os.getenv("POLL_IDLE", "600"))       # давно не игра�
 PARSE_WAIT_MIN = int(os.getenv("PARSE_WAIT_MIN", "25"))
 # Примерный шаг MMR за рейтинговую игру
 MMR_STEP = int(os.getenv("MMR_STEP", "25"))
+# Итоги недели: в воскресенье в этот час по этому часовому поясу (смещение от UTC, по умолчанию Москва)
+WEEKLY_HOUR = int(os.getenv("WEEKLY_HOUR", "20"))
+TZ_OFFSET = int(os.getenv("TZ_OFFSET", "3"))
 
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "bot.db"

@@ -75,9 +75,10 @@ class Api:
 
     # ---------- OpenDota ----------
     async def od(self, path, method="GET", params=None):
-        params = dict(params or {})
+        # список пар — когда параметр повторяется (project=…&project=…)
+        params = list(params.items() if isinstance(params, dict) else params or [])
         if OPENDOTA_API_KEY:
-            params["api_key"] = OPENDOTA_API_KEY
+            params.append(("api_key", OPENDOTA_API_KEY))
         for attempt in range(3):
             await self.od_limit.wait()
             try:

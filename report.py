@@ -13,7 +13,8 @@ class MmrInfo:
     ranked: bool
     delta: int | None = None       # ±шаг
     current: int | None = None     # указанный игроком MMR (или примерный, см. approx)
-    approx: bool = False           # MMR не указан — оценка по медали
+    approx: bool = False           # MMR не указан — оценка (OpenDota или по медали)
+    approx_src: str = "medal"      # opendota | medal
     old_rank: int | None = None
     new_rank: int | None = None
     leaderboard: int | None = None
@@ -75,7 +76,8 @@ def build_line(p: Player, api: Api) -> str:
     return out
 
 
-def build_report(m: Match, me: Player, avg: dict | None, mmr: MmrInfo, api: Api) -> str:
+def build_report(m: Match, me: Player, avg: dict | None, mmr: MmrInfo, api: Api,
+                 records: list[str] | None = None) -> str:
     won = me.is_radiant == m.radiant_win
     a = avg or {}
 
@@ -123,14 +125,14 @@ def build_report(m: Match, me: Player, avg: dict | None, mmr: MmrInfo, api: Api)
         legend = "<i>топ X% — среди игроков на этом герое</i>"
 
     if mmr.approx:
-        rank += "\n<i>MMR примерный, по медали. Укажи точный: /mmr 4200</i>"
-    return "\n".join([
-        head, score, sub, "",
-        hero, rank, "",
-        "<blockquote>" + "\n".join(stats) + "</blockquote>",
-        legend, "",
-        build_line(me, api),
-    ])
+        src = "оценка OpenDota" if mmr.approx_src == "opendota" else "примерно, по медали"
+        rank += f"\n<i>MMR — {src}. Укажи точный: /mmr 4200</i>"
+    parts = [head, score, sub, "", hero, rank, "",
+             "<blockquote>" + "\n".join(stats) + "</blockquote>", legend, ""]
+    if records:
+        parts += [f"{e('streak')} <b>Рекорд на {escape(me.hero_name)}:</b> " + ", ".join(records), ""]
+    parts.append(build_line(me, api))
+    return "\n".join(parts)
 
 
 def short_caption(m: Match, me: Player) -> str:

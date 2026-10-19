@@ -9,7 +9,7 @@ from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, MenuButtonWeb
 
 from analysis import (apply_stratz, estimate_mmr, mmr_to_rank_tier, parse_match,
                       rank_tier_range)
-from api import Api
+from api import Api, ApiError
 from averages import get_averages
 from buttons import BLUE, ib
 from config import MMR_STEP, WEBAPP_URL
@@ -17,7 +17,7 @@ from db import DB
 from details import build_details
 from draft_image import build_draft_image
 from emoji import strip_custom
-from report import MmrInfo, build_report, short_caption
+from report import MmrInfo, build_report, fmt_num, short_caption
 
 log = logging.getLogger(__name__)
 
@@ -25,12 +25,15 @@ log = logging.getLogger(__name__)
 PACKS = None
 
 
-def match_keyboard(match_id: int) -> InlineKeyboardMarkup:
+def match_keyboard(match_id: int, app_url: str | None = None) -> InlineKeyboardMarkup:
+    second = [ib("Подробнее", "more", BLUE, callback_data=f"more:{match_id}")]
+    if app_url:   # полный разбор этого матча в мини-приложении
+        second.append(ib("В приложении", "last", web_app=WebAppInfo(url=f"{app_url}&match={match_id}")))
     return InlineKeyboardMarkup(inline_keyboard=[[
         ib("OpenDota", url=f"https://www.opendota.com/matches/{match_id}"),
         ib("STRATZ", url=f"https://stratz.com/matches/{match_id}"),
         ib("Dotabuff", url=f"https://www.dotabuff.com/matches/{match_id}"),
-    ], [ib("Подробнее", "more", BLUE, callback_data=f"more:{match_id}")]])
+    ], second])
 
 
 async def _load(api: Api, data: dict, user, player_slot: int | None = None):
@@ -91,11 +94,15 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
         new_rank = mmr_to_rank_tier(mmr.current)
         mmr.old_rank = mmr_to_rank_tier(user["mmr"])
     else:
-        # медаль из самого матча свежее, чем в профиле OpenDota
-        profile = {} if me.rank_tier else (await api.player(user["account_id"]) or {})
+        # медаль из самого матча свежее, чем в профиле OpenDota; из профиля — оценка MMR от OpenDota
+        profile = await api.player(user["account_id"]) or {}
         new_rank = me.rank_tier or profile.get("rank_tier")
         mmr.leaderboard = profile.get("leaderboard_rank")
-        mmr.current, mmr.approx = estimate_mmr(new_rank), True
+        mmr.approx = True
+        if profile.get("computed_mmr"):
+            mmr.current, mmr.approx_src = round(profile["computed_mmr"]), "opendota"
+        else:
+            mmr.current = estimate_mmr(new_rank)
     mmr.new_rank = new_rank
     if count_mmr:
         await db.update_user(user["tg_id"], rank_tier=new_rank,
@@ -106,9 +113,37 @@ async def make_report(api: Api, db: DB, user, match_id: int, player_slot: int | 
     avg = await get_averages(api, db, me.hero_id, me.position, new_rank or m.avg_rank_tier, m.duration)
     if PACKS:
         await PACKS.ensure_for_report(me.hero_id, me.items + [me.neutral, me.enhancement], new_rank)
-    html = build_report(m, me, avg, mmr, api)
+    records = await hero_records(api, user["account_id"], me, data)
+    html = build_report(m, me, avg, mmr, api, records)
     png = await build_draft_image(m, me.account_id, api)
-    return png, html, short_caption(m, me), m.match_id
+    # новая медаль или звезда — для отдельного поздравления (только в отчётах после игры)
+    rank_up = (mmr.old_rank, new_rank) if (count_mmr and mmr.old_rank and new_rank and new_rank > mmr.old_rank) else None
+    return png, html, short_caption(m, me), m.match_id, {"rank_up": rank_up}
+
+
+RECORD_MIN_GAMES = 5   # рекорд считаем, если до этого на герое было хотя бы столько игр
+RECORD_STATS = [("gold_per_min", "GPM"), ("kills", "убийств"), ("hero_damage", "урона по героям"),
+                ("last_hits", "добиваний")]
+
+
+async def hero_records(api: Api, account_id: int, me, data: dict) -> list[str]:
+    """Личные рекорды на герое, которые побил этот матч: «GPM 712 (было 680)»."""
+    raw = next((p for p in data.get("players", []) if p.get("player_slot") == me.slot), {})
+    try:
+        hist = await api.od(f"/players/{account_id}/matches", params=[
+            ("hero_id", me.hero_id), *[("project", k) for k, _ in RECORD_STATS]]) or []
+    except ApiError as e:
+        log.info("records: %s", e)
+        return []
+    others = [h for h in hist if h.get("match_id") != data.get("match_id")]
+    if len(others) < RECORD_MIN_GAMES:
+        return []
+    out = []
+    for key, name in RECORD_STATS:
+        mine, best = raw.get(key) or 0, max((h.get(key) or 0) for h in others)
+        if mine and best and mine > best:
+            out.append(f"{name} <b>{fmt_num(mine)}</b> (было {fmt_num(best)})")
+    return out
 
 
 def webapp_url(user) -> str | None:
@@ -131,9 +166,10 @@ async def update_webapp_button(bot: Bot, user):
         log.warning("menu button for %s: %s", user["tg_id"], e)
 
 
-async def send_report(bot: Bot, chat_id: int, png: bytes, html: str, caption: str, match_id: int):
+async def send_report(bot: Bot, chat_id: int, png: bytes, html: str, caption: str, match_id: int,
+                      app_url: str | None = None):
     photo = BufferedInputFile(png, filename=f"match_{match_id}.png")
-    kb = match_keyboard(match_id)
+    kb = match_keyboard(match_id, app_url)
 
     async def safe(send, text, **kw):
         try:

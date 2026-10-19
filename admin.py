@@ -201,12 +201,17 @@ def setup(db: DB) -> Router:
         asyncio.create_task(broadcast(bot, cb.message.chat.id, msg_id, cb.message))
 
     async def broadcast(bot: Bot, from_chat: int, msg_id: int, status: Message):
+        from handlers import menu   # здесь, а не наверху: handlers сам импортирует admin
         chats = [c for c in await db.active_chats() if c["chat_id"] != OWNER_ID]
+        markup = menu()   # заодно у всех обновится нижнее меню (новые кнопки)
         sent = blocked = failed = 0
         for c in chats:
             for _ in range(3):
                 try:
-                    await bot.copy_message(c["chat_id"], from_chat, msg_id)
+                    try:
+                        await bot.copy_message(c["chat_id"], from_chat, msg_id, reply_markup=markup)
+                    except TelegramBadRequest:   # меню с иконками не принято — без меню
+                        await bot.copy_message(c["chat_id"], from_chat, msg_id)
                     sent += 1
                 except TelegramRetryAfter as err:
                     await asyncio.sleep(err.retry_after + 1)
