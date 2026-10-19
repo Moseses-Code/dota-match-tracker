@@ -65,6 +65,9 @@ DEFAULTS = {
     "help": ("❗", "5467928559664242360"),
     "more": ("📊", "5431577498364158238"),
     "admin": ("👑", "5467406098367521267"),
+    "settings": ("⚙️", "5431577498364158238"),
+    "weekly": ("📅", "5451732530048802485"),
+    "tilt": ("😮‍💨", "5370646412243510708"),
 }
 
 # тематические значки: ключ -> иконка предмета Dota 2 из пака бота (custom_packs, emoji_map.json);
@@ -90,6 +93,9 @@ THEMED = {
     "help": "item:clarity",
     "more": "item:gem",
     "admin": "item:ultimate_scepter",
+    "settings": "item:bottle",
+    "weekly": "item:tome_of_knowledge",
+    "tilt": "item:refresher",
 }
 
 _override: dict[str, list[str]] = {}

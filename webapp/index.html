@@ -334,7 +334,9 @@ async function loadReal() {
   });
   return {
     profile: { name: prof.personaname || `ID ${ACCOUNT}`, avatar: prof.avatarfull, tier: player?.rank_tier, lb: player?.leaderboard_rank,
-      mmr: mmrParam || estimateMmr(player?.rank_tier), approx: !mmrParam || params.get("approx") === "1", private: !prof.personaname && !matches.length },
+      // без указанного MMR — оценка OpenDota (computed_mmr), а если её нет — середина медали
+      mmr: mmrParam || (player?.computed_mmr ? Math.round(player.computed_mmr) : estimateMmr(player?.rank_tier)),
+      approx: !mmrParam, private: !prof.personaname && !matches.length },
     matches, friends: null,   // друзья грузятся отдельно — OpenDota отвечает на этот запрос дольше всего
   };
 }
@@ -768,8 +770,9 @@ function matchHtml(m, x) {
 }
 
 async function openMatch(id) {
-  const m = DATA.matches.find(x => x.id === id), sheet = $("#sheet");
-  sheet.innerHTML = `<div class="wrap"><div class="sheet-top"><button class="back" id="back">← Назад</button><span class="muted" style="font-size:12px">Матч ${m.id} · ${ago(m.end)}</span></div>
+  // матч может быть старше месяца (открыт по кнопке из отчёта) — тогда его нет в списке
+  const m = DATA.matches.find(x => x.id === id) || { id, end: null, demo: DEMO }, sheet = $("#sheet");
+  sheet.innerHTML = `<div class="wrap"><div class="sheet-top"><button class="back" id="back">← Назад</button><span class="muted" style="font-size:12px">Матч ${m.id}${m.end ? " · " + ago(m.end) : ""}</span></div>
     <div id="mbody" style="display:grid;gap:14px;padding-bottom:40px"><div class="skel"></div><div class="skel"></div></div></div>`;
   sheet.hidden = false; sheet.scrollTop = 0; document.body.style.overflow = "hidden";
   $("#back").addEventListener("click", closeMatch); tg?.BackButton?.show();
@@ -809,6 +812,8 @@ async function start() {
     }
     render();
     if (!DEMO) loadFriends();
+    const deep = parseInt(params.get("match") || "", 10);   // «В приложении» под отчётом — сразу разбор матча
+    if (deep && !DEMO) openMatch(deep);
   } catch (err) {
     $("#view").innerHTML = `<section class="card"><div class="state">Не получилось загрузить статистику: ${esc(err.message)}.<button class="btn" data-retry="1">Повторить</button></div></section>`;
   }

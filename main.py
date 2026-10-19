@@ -25,6 +25,7 @@ COMMANDS = [
     BotCommand(command="match", description="Отчёт о матче по ID"),
     BotCommand(command="profile", description="Мой профиль"),
     BotCommand(command="mmr", description="Указать текущий MMR"),
+    BotCommand(command="settings", description="Настройки"),
     BotCommand(command="invite", description="Позвать друга"),
     BotCommand(command="help", description="Помощь"),
     BotCommand(command="unlink", description="Отвязать аккаунт"),

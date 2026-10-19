@@ -59,8 +59,14 @@ class DB:
         # миграции: колонки, добавленные после первого запуска
         cur = await self.conn.execute("PRAGMA table_info(users)")
         cols = {r["name"] for r in await cur.fetchall()}
-        if "username" not in cols:
-            await self.conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
+        for col, decl in [("username", "TEXT"),
+                          ("report_mode", "TEXT DEFAULT 'all'"),   # all | noturbo | ranked — о каких играх слать отчёты
+                          ("weekly", "INTEGER DEFAULT 1"),          # итоги недели
+                          ("tilt", "INTEGER DEFAULT 1"),            # предупреждение после 3 поражений подряд
+                          ("loss_streak", "INTEGER DEFAULT 0"),
+                          ("weekly_sent", "INTEGER DEFAULT 0")]:
+            if col not in cols:
+                await self.conn.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
         await self.conn.commit()
 
     async def close(self):
@@ -205,6 +211,11 @@ class DB:
 
     async def all_users(self):
         cur = await self.conn.execute(self._USERS_SQL + " ORDER BY u.created_at")
+        return await cur.fetchall()
+
+    async def weekly_due(self, since):
+        cur = await self.conn.execute(
+            "SELECT * FROM users WHERE active=1 AND weekly=1 AND COALESCE(weekly_sent,0)<?", (since,))
         return await cur.fetchall()
 
     async def active_chats(self):

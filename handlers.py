@@ -34,6 +34,8 @@ BTN_PROFILE = "Профиль"
 BTN_FRIENDS = "Друзья"
 BTN_SHARE = "Позвать друга"
 BTN_HELP = "Помощь"
+BTN_SETTINGS = "Настройки"
+REPORT_MODES = [("all", "Все игры"), ("noturbo", "Без турбо"), ("ranked", "Только рейтинг")]
 # тексты старого меню: у кого оно ещё открыто, кнопки должны работать
 OLD_BTN = {"📊 Последний матч": BTN_LAST, "👤 Профиль": BTN_PROFILE,
            "📨 Позвать друга": BTN_SHARE, "❓ Помощь": BTN_HELP}
@@ -43,7 +45,7 @@ HISTORY_PAGE = 10
 MENU_ROWS = [[(BTN_LAST, "last", GREEN)],
              [(BTN_HISTORY, "history", None), (BTN_FRIENDS, "friends", None)],
              [(BTN_PROFILE, "profile", None), (BTN_SHARE, "share", None)],
-             [(BTN_HELP, "help", None)]]
+             [(BTN_SETTINGS, "settings", None), (BTN_HELP, "help", None)]]
 
 
 def menu(plain: bool = False, owner: bool = False) -> ReplyKeyboardMarkup:
@@ -109,12 +111,49 @@ def help_text() -> str:
         "/last — последний матч · /match <code>ID</code> — любой матч\n"
         "/history — мои матчи · /friends — с кем играл за месяц\n"
         "/profile — профиль · /mmr <code>2400</code> — указать MMR\n"
-        "/invite — позвать друга · /unlink — отвязать аккаунт\n\n"
+        "/invite — позвать друга · /settings — настройки\n"
+        "/unlink — отвязать аккаунт\n\n"
         f"{e('warn')} В Dota 2 должна быть включена <b>«Общедоступная история матчей»</b>.\n\n"
         "<i>Бот хранит твой Telegram и Dota ID, ник и историю отправленных отчётов — только для работы бота. "
         "Удалить данные: /unlink.</i>\n\n"
         "Есть вопрос или идея? Жми кнопку ниже 👇"
     )
+
+
+def welcome_text(user) -> str:
+    """Приветствие после привязки аккаунта: что умеет бот и что подробнее — в приложении."""
+    name = escape(user["persona"] or "")
+    return (
+        f"{e('crown')} <b>Готово{', ' + name if name else ''}!</b> Теперь я слежу за твоими играми.\n\n"
+        "<b>Что я умею</b>\n"
+        f"{e('last')} <b>Отчёт после каждой игры</b> — сам, через несколько минут после матча: драфт, KDA, GPM, "
+        "XPM, нетворс, позиция, сравнение со средним по твоему рангу и финальный билд.\n"
+        f"{e('more')} <b>«Подробнее»</b> под отчётом — разбор матча: урон, лечение, участие в драках, варды, "
+        "итог линии, тайминги предметов.\n"
+        f"{e('history')} <b>«Мои матчи»</b> — последние игры, любую можно открыть.\n"
+        f"{e('friends')} <b>«Друзья»</b> — с кем играешь чаще всего и как с ними побеждаешь.\n"
+        f"{e('rank')} <b>Медаль и MMR</b> — укажи свой: /mmr <code>4200</code>\n"
+        f"{e('settings')} <b>«Настройки»</b> — о каких играх присылать отчёты, итоги недели, "
+        "предупреждение о серии поражений.\n\n"
+        f"{e('winrate')} <b>Ещё больше — в приложении «Статистика»</b> (кнопка слева от поля ввода): графики "
+        "винрейта, все матчи с разбором, герои и позиции за любой период, когда ты играешь лучше всего.\n\n"
+        "Сыграй матч — отчёт придёт сам 👇"
+    )
+
+
+def settings_view(user) -> tuple[str, InlineKeyboardMarkup]:
+    mode = user["report_mode"] or "all"
+    text = (f"{e('settings')} <b>Настройки</b>\n\n"
+            "<b>Отчёты после игры</b> — о каких матчах присылать.\n"
+            "<b>Итоги недели</b> — по воскресеньям в 20:00 (МСК): матчи, винрейт, MMR, герой недели.\n"
+            "<b>Серия поражений</b> — после 3 поражений подряд предложу сделать перерыв.")
+    on = lambda v: "✅" if v else "⬜"   # noqa: E731
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [ib(name, style=GREEN if key == mode else None, callback_data=f"set:report:{key}") for key, name in REPORT_MODES],
+        [ib(f"{on(user['weekly'])} Итоги недели", callback_data="set:weekly")],
+        [ib(f"{on(user['tilt'])} Серия поражений", callback_data="set:tilt")],
+    ])
+    return text, kb
 
 
 def setup(api: Api, db: DB):
@@ -200,16 +239,15 @@ def setup(api: Api, db: DB):
         await db.set_username(cb.from_user.id, cb.from_user.username)
         await update_webapp_button(cb.bot, await db.get_user(cb.from_user.id))
         await state.clear()
-        await answer_menu(
-            cb.message,
-            f"{e('ok')} <b>Готово!</b> Теперь я слежу за твоими играми — отчёт придёт через "
-            "несколько минут после окончания матча.\n\n"
-            "Совет: укажи текущий MMR командой /mmr <code>4200</code>, и я буду считать изменения.",
-        )
+        user = await db.get_user(cb.from_user.id)
+        await answer_menu(cb.message, welcome_text(user))
+        rows = []
+        if url := webapp_url(user):
+            rows.append([ib("Открыть статистику", "more", GREEN, web_app=WebAppInfo(url=url))])
         if data["last"]:
-            kb = InlineKeyboardMarkup(inline_keyboard=[[
-                ib("Показать последний матч", "last", GREEN, callback_data="last")]])
-            await cb.message.answer("Хочешь посмотреть отчёт о последней игре?", reply_markup=kb)
+            rows.append([ib("Показать последний матч", "last", BLUE, callback_data="last")])
+        if rows:
+            await cb.message.answer("С чего начнём? 👇", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
         await cb.answer()
 
     async def need_user(msg: Message):
@@ -240,8 +278,8 @@ def setup(api: Api, db: DB):
         if not res:
             await bot.send_message(chat_id, f"{e('warn')} Не нашёл тебя в матче <code>{match_id}</code>.")
             return
-        png, html, caption, mid = res
-        await send_report(bot, chat_id, png, html, caption, mid)
+        png, html, caption, mid, _ = res
+        await send_report(bot, chat_id, png, html, caption, mid, webapp_url(user))
 
     async def send_last(bot: Bot, chat_id: int, user):
         await bot.send_chat_action(chat_id, "upload_photo")
@@ -416,6 +454,30 @@ def setup(api: Api, db: DB):
         except TelegramBadRequest:   # премиум-эмодзи не приняты — шлём с обычными
             await msg.answer(strip_custom(text))
 
+    @router.message(Command("settings"))
+    @router.message(btn(BTN_SETTINGS))
+    async def settings_cmd(msg: Message):
+        if user := await need_user(msg):
+            text, kb = settings_view(user)
+            await msg.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data.startswith("set:"))
+    async def settings_cb(cb: CallbackQuery):
+        user = await db.get_user(cb.from_user.id)
+        if not user:
+            return await cb.answer()
+        parts = cb.data.split(":")
+        if parts[1] == "report" and parts[2] in dict(REPORT_MODES):
+            await db.update_user(user["tg_id"], report_mode=parts[2])
+        elif parts[1] in ("weekly", "tilt"):
+            await db.update_user(user["tg_id"], **{parts[1]: 0 if user[parts[1]] else 1})
+        text, kb = settings_view(await db.get_user(cb.from_user.id))
+        try:
+            await cb.message.edit_text(text, reply_markup=kb)
+        except TelegramBadRequest:
+            pass
+        await cb.answer("Сохранено")
+
     @router.message(Command("match"))
     async def match_cmd(msg: Message, command: CommandObject, bot: Bot):
         user = await need_user(msg)
@@ -441,11 +503,19 @@ def setup(api: Api, db: DB):
             st = {}
         name = st.get("name") or user["persona"] or "?"
         tier = mmr_to_rank_tier(user["mmr"]) if user["mmr"] else user["rank_tier"]
-        approx = estimate_mmr(tier)
+        # без указанного MMR — оценка OpenDota, а если её нет — середина медали
+        computed = None
+        if not user["mmr"]:
+            try:
+                computed = (await api.player(acc) or {}).get("computed_mmr")
+            except ApiError:
+                pass
+        approx = round(computed) if computed else estimate_mmr(tier)
+        src = "оценка OpenDota" if computed else "примерно, по медали"
         lines = [f"{e('hero')} <b>{escape(name)}</b>",
                  f"{rank_e(tier)} <b>{rank_name(tier)}</b>"
                  + (f" · {user['mmr']} MMR" if user["mmr"] else
-                    (f" · ≈{approx} MMR\n<i>MMR примерный, по медали. Укажи точный: /mmr 4200</i>" if approx
+                    (f" · ≈{approx} MMR\n<i>MMR — {src}. Укажи точный: /mmr 4200</i>" if approx
                      else " · <i>MMR не указан (/mmr)</i>"))]
         if st.get("matches"):
             wr = st["wins"] / st["matches"] * 100
