@@ -23,6 +23,7 @@
   --win: #6cc072;       /* Силы Света */
   --loss: #e25b4c;      /* Силы Тьмы */
   --on-gold: #1a1407;
+  --sentry: #5aa9ff;    /* сентри-варды */
   --font-display: "Unbounded", "Segoe UI", system-ui, sans-serif;
   --font-body: "Onest", "Segoe UI", system-ui, -apple-system, sans-serif;
   --r: 14px;
@@ -31,13 +32,13 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #f2f3f6; --surface: #ffffff; --surface-2: #eceff4; --line: #d9dee6;
-    --fg: #141a23; --muted: #5b6676; --gold: #a8740c; --win: #2e8a3a; --loss: #c23a2c; --on-gold: #ffffff;
+    --fg: #141a23; --muted: #5b6676; --gold: #a8740c; --win: #2e8a3a; --loss: #c23a2c; --on-gold: #ffffff; --sentry: #1f6fd1;
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
   --bg: #f2f3f6; --surface: #ffffff; --surface-2: #eceff4; --line: #d9dee6;
-  --fg: #141a23; --muted: #5b6676; --gold: #a8740c; --win: #2e8a3a; --loss: #c23a2c; --on-gold: #ffffff;
+  --fg: #141a23; --muted: #5b6676; --gold: #a8740c; --win: #2e8a3a; --loss: #c23a2c; --on-gold: #ffffff; --sentry: #1f6fd1;
   color-scheme: light;
 }
 
@@ -186,6 +187,26 @@ td:first-child, th:first-child { text-align: left; }
 tr.me td { color: var(--gold); font-weight: 600; }
 tbody tr + tr td { border-top: 1px solid var(--line); }
 .team-sep td { padding-top: 12px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-top: 0 !important; }
+
+/* билды и карта вардов */
+.builds details { border-radius: 10px; }
+.builds details + details { border-top: 1px solid var(--line); }
+.builds summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 9px 4px; }
+.builds summary::-webkit-details-marker { display: none; }
+.builds summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .15s; }
+.builds details:not([open]) summary::after { transform: rotate(-90deg); }
+.builds .me-row b { color: var(--gold); }
+.items { display: flex; flex-wrap: wrap; gap: 8px 6px; padding: 2px 4px 12px; }
+.item { display: grid; justify-items: center; gap: 3px; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.item .ic { position: relative; width: 40px; height: 29px; border-radius: 5px; background: var(--surface-2); overflow: hidden;
+  display: grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--gold); }
+.item .ic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.item.small .ic { width: 30px; height: 22px; }
+.sub-label { font-size: 11px; color: var(--muted); padding: 0 4px 6px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.wardmap { position: relative; max-width: 420px; width: 100%; margin: 0 auto; }
+.wardmap svg { display: block; width: 100%; height: auto; border-radius: 12px; }
+.wardmap circle[data-w] { cursor: pointer; }
+.ward-info { min-height: 18px; font-size: 13px; text-align: center; color: var(--muted); }
 
 @media (prefers-reduced-motion: no-preference) {
   .sheet { animation: up .22s ease-out; }
@@ -699,6 +720,20 @@ async function loadMatch(m) {
     k: p.kills, d: p.deaths, a: p.assists, gpm: p.gold_per_min, xpm: p.xp_per_min, nw: p.net_worth || p.total_gold || 0,
     dmg: p.hero_damage || 0, lane: p.lane_role, nw10: (p.gold_t || [])[10], leaver: (p.leaver_status || 0) > 0, raw: p,
   }));
+  // билд каждого игрока: покупки по времени и финальный инвентарь
+  const byKey = {}; for (const it of Object.values(items)) byKey[it.k] = it;
+  for (const p of players) {
+    p.buys = (p.raw.purchase_log || []).map(b => { const it = byKey[b.key];
+      return it && { k: b.key, n: it.n, img: it.img, cost: it.cost, t: Math.max(0, b.time) }; }).filter(Boolean);
+    p.final = [0, 1, 2, 3, 4, 5].map(i => items[p.raw["item_" + i]]).filter(Boolean);
+    p.backpack = [0, 1, 2].map(i => items[p.raw["backpack_" + i]]).filter(Boolean);
+    p.neutral = items[p.raw.item_neutral] || null;
+  }
+  // варды: координаты в клетках карты (примерно 64…192 по обеим осям)
+  const wards = players.flatMap(p => [["obs", p.raw.obs_log], ["sen", p.raw.sen_log]].flatMap(([type, log]) =>
+    (log || []).map(w => { let { x, y } = w; if (x == null && w.key) { try { [x, y] = JSON.parse(w.key); } catch (_) {} }
+      return x == null ? null : { type, x, y, t: Math.max(0, w.time || 0), radiant: p.radiant, hero: p.hero, me: p.me }; })
+      .filter(Boolean)));
   const rad = players.filter(p => p.radiant), dire = players.filter(p => !p.radiant);
   guessPositions(rad); guessPositions(dire);
   [rad, dire].forEach(t => t.sort((a, b) => (a.pos || 9) - (b.pos || 9)));
@@ -722,7 +757,7 @@ async function loadMatch(m) {
     contrib: [OPP_SHARE(me, team, p => p.nw),
       Math.min(100, raw.teamfight_participation != null ? raw.teamfight_participation * 100 : (me.k + me.a) / Math.max(1, teamKills) * 100),
       OPP_SHARE(raw, rawTeam, p => p.tower_damage), OPP_SHARE(raw, rawTeam, p => p.hero_healing), support.reduce((s, v) => s + v, 0) / 3],
-    timings,
+    timings, wards,
   };
 }
 
@@ -738,12 +773,78 @@ function demoMatch(m) {
       gpm, xpm: Math.round(gpm * 1.1), nw: Math.round(gpm * m.dur / 60), dmg: Math.round((core ? 18000 : 7000) + rnd() * 16000) };
   });
   const rad = mk(true), dire = mk(false), me = (meRadiant ? rad : dire).find(p => p.me) || rad[0];
+  const demoItems = ["Boots of Speed", "Power Treads", "Battle Fury", "Manta Style", "Black King Bar", "Butterfly", "Abyssal Blade"];
+  for (const p of [...rad, ...dire]) {
+    p.buys = demoItems.map((n, i) => ({ n, cost: i < 1 ? 500 : 3000, t: Math.round(m.dur * (0.04 + i * 0.13) * (0.8 + rnd() * 0.4)) }));
+    p.final = demoItems.slice(1, 7).map(n => ({ n })); p.backpack = []; p.neutral = null;
+  }
+  const wards = Array.from({ length: 34 }, (_, i) => { const radiant = i % 2 === 0;
+    return { type: rnd() < 0.45 ? "obs" : "sen", x: 64 + rnd() * 128, y: 64 + rnd() * 128, t: Math.round(rnd() * m.dur),
+             radiant, hero: (radiant ? rad : dire)[i % 5].hero, me: radiant === meRadiant && i % 5 === 0 }; });
   let g = 0; const gold = [0]; for (let i = 1; i <= m.dur / 60; i++) { g += (rnd() - .5) * 1800 + (radiantWin ? 1 : -1) * i * 18; gold.push(Math.round(g)); }
   const team = meRadiant ? rad : dire;
   return { parsed: true, radiantWin, meRadiant, me, rad, dire, dur: m.dur, ranked: m.ranked, gold,
     score: [rad.reduce((s, p) => s + p.k, 0), dire.reduce((s, p) => s + p.k, 0)],
     contrib: [OPP_SHARE(me, team, p => p.nw), 45 + rnd() * 30, 20 + rnd() * 35, 2 + rnd() * 10, 3 + rnd() * 8],
-    timings: ["Battle Fury", "Manta Style", "Black King Bar", "Butterfly"].map((n, i) => ({ n, t: Math.round(m.dur * (0.22 + i * 0.17)) })) };
+    timings: ["Battle Fury", "Manta Style", "Black King Bar", "Butterfly"].map((n, i) => ({ n, t: Math.round(m.dur * (0.22 + i * 0.17)) })), wards };
+}
+
+const CONSUMABLE = new Set(["tango", "flask", "clarity", "enchanted_mango", "faerie_fire", "ward_observer", "ward_sentry",
+  "ward_dispenser", "dust", "smoke_of_deceit", "tpscroll", "tome_of_knowledge", "blood_grenade", "famango", "great_famango"]);
+const view = { allBuys: false, wardType: "all", wardTeam: "all", wardTime: "all" };
+let CUR = null;   // открытый матч - для перерисовки по фильтрам
+
+// буквы названия лежат под картинкой: видны, если иконка не загрузилась
+const itemIcon = it => `<span class="ic">${esc((it.n || "?").split(" ").map(w => w[0]).join("").slice(0, 3))}${it.img
+  ? `<img src="${CDN}${esc(it.img)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`;
+
+function buildsHtml(x) {
+  const block = p => {
+    const final = new Set([...p.final, ...p.backpack].map(it => it.k));
+    const buys = p.buys.filter(b => view.allBuys || (!CONSUMABLE.has(b.k) && (b.cost >= 1000 || final.has(b.k))));
+    return `<details${p.me ? " open" : ""}><summary class="${p.me ? "me-row" : ""}">${hico({ name: p.hero, img: p.img }, 30)}
+        <span style="min-width:0"><b>${esc(p.hero)}</b> <span class="s muted">${esc(p.name)}</span><br><span class="s muted">${p.k}/${p.d}/${p.a} · ${fmtK(p.nw)} NW</span></span></summary>
+      ${buys.length ? `<div class="sub-label">Покупки</div><div class="items">${buys.map(b =>
+        `<span class="item" title="${esc(b.n)}">${itemIcon(b)}${fmtTime(b.t)}</span>`).join("")}</div>`
+        : `<div class="sub-label">Время покупок появится, когда OpenDota разберёт реплей</div>`}
+      <div class="sub-label">В конце игры</div><div class="items">${[...p.final.map(it => [it, ""]), ...p.backpack.map(it => [it, "рюкзак"]),
+        ...(p.neutral ? [[p.neutral, "нейтр."]] : [])].map(([it, note]) =>
+        `<span class="item small" title="${esc(it.n)}">${itemIcon(it)}${note}</span>`).join("") || `<span class="s muted">-</span>`}</div>
+    </details>`;
+  };
+  return `<div class="chips"><button class="chip" aria-pressed="${!view.allBuys}" data-view="allBuys:0">основные покупки</button>
+      <button class="chip" aria-pressed="${view.allBuys}" data-view="allBuys:1">все, с расходниками</button></div>
+    <div class="builds"><div class="team-name" style="color:var(--win);padding:4px">СИЛЫ СВЕТА</div>${x.rad.map(block).join("")}
+      <div class="team-name" style="color:var(--loss);padding:12px 4px 4px">СИЛЫ ТЬМЫ</div>${x.dire.map(block).join("")}</div>`;
+}
+
+function wardsHtml(x) {
+  const [lo, hi] = { all: [0, 1e9], "0": [0, 600], "10": [600, 1200], "20": [1200, 1800], "30": [1800, 1e9] }[view.wardTime];
+  const list = x.wards.filter(w => (view.wardType === "all" || w.type === view.wardType)
+    && (view.wardTeam === "all" || (view.wardTeam === "mine") === (w.radiant === x.meRadiant)) && w.t >= lo && w.t < hi);
+  const X = v => Math.min(100, Math.max(0, (v - 64) / 128 * 100)), Y = v => Math.min(100, Math.max(0, (192 - v) / 128 * 100));
+  const chips = (key, opts) => `<div class="chips">${opts.map(([v, n]) =>
+    `<button class="chip" aria-pressed="${view[key] === v}" data-view="${key}:${v}">${n}</button>`).join("")}</div>`;
+  const obs = x.wards.filter(w => w.type === "obs").length, sen = x.wards.length - obs;
+  return `${chips("wardType", [["all", "все"], ["obs", "обычные"], ["sen", "сентри"]])}
+    ${chips("wardTeam", [["all", "обе команды"], ["mine", "мои союзники"], ["enemy", "соперники"]])}
+    ${chips("wardTime", [["all", "вся игра"], ["0", "0-10 мин"], ["10", "10-20"], ["20", "20-30"], ["30", "30+"]])}
+    <div class="wardmap"><svg viewBox="0 0 100 100" role="img" aria-label="Карта вардов">
+      <rect width="100" height="100" fill="var(--surface-2)"/>
+      <polygon points="0,100 0,52 48,100" fill="var(--win)" fill-opacity=".14"/>
+      <polygon points="100,0 52,0 100,48" fill="var(--loss)" fill-opacity=".14"/>
+      <path d="M2,14 C30,30 45,42 52,52 S72,72 86,98" fill="none" stroke="var(--sentry)" stroke-opacity=".22" stroke-width="7" stroke-linecap="round"/>
+      <polyline points="9,91 9,9 91,9" fill="none" stroke="var(--line)" stroke-width="1.6"/>
+      <polyline points="9,91 91,91 91,9" fill="none" stroke="var(--line)" stroke-width="1.6"/>
+      <line x1="9" y1="91" x2="91" y2="9" stroke="var(--line)" stroke-width="1.6"/>
+      <circle cx="9" cy="91" r="4" fill="var(--win)"/><circle cx="91" cy="9" r="4" fill="var(--loss)"/>
+      ${list.map((w, i) => `<circle data-w="${i}" cx="${X(w.x).toFixed(1)}" cy="${Y(w.y).toFixed(1)}" r="${w.me ? 2.6 : 2}"
+        fill="${w.type === "obs" ? "var(--gold)" : "var(--sentry)"}" stroke="var(${w.radiant ? "--win" : "--loss"})" stroke-width="${w.me ? 1.2 : .7}"/>`).join("")}
+    </svg></div>
+    <div class="ward-info" id="ward-info">${list.length ? "Нажми на вард - покажу, кто и когда его поставил" : "Под этот фильтр вардов нет"}</div>
+    <div class="legend"><span><i style="background:var(--gold);border-radius:50%"></i>обычный (${obs})</span>
+      <span><i style="background:var(--sentry);border-radius:50%"></i>сентри (${sen})</span>
+      <span><i style="border:2px solid var(--win);border-radius:50%"></i>Свет</span><span><i style="border:2px solid var(--loss);border-radius:50%"></i>Тьма</span></div>`;
 }
 
 function matchHtml(m, x) {
@@ -763,6 +864,10 @@ function matchHtml(m, x) {
         <span class="muted" style="font-size:12px">Полоска - момент покупки от начала до конца матча.</span>` : x.parsed ? `<p class="muted" style="margin:0;font-size:13px">Дорогих предметов в финальном билде нет.</p>` : notParsed}
       </section>
     </div>
+    <section class="card"><div class="card-head"><h2>Карта вардов</h2><span class="muted" style="font-size:12px">где и когда ставили</span></div>
+      <div id="wards-box" style="display:grid;gap:10px">${x.wards.length ? wardsHtml(x) : x.parsed ? `<p class="muted" style="margin:0;font-size:13px">Вардов в этом матче не ставили.</p>` : notParsed}</div></section>
+    <section class="card"><div class="card-head"><h2>Билды</h2><span class="muted" style="font-size:12px">нажми на игрока</span></div>
+      <div id="builds-box" style="display:grid;gap:8px">${buildsHtml(x)}</div></section>
     <section class="card"><div class="card-head"><h2>Все игроки</h2></div>
       <div class="table-scroll"><table><thead><tr><th>Герой</th><th>K/D/A</th><th>NW</th><th>GPM</th><th>XPM</th><th>Урон</th></tr></thead>
         <tbody><tr class="team-sep"><td colspan="6" style="color:var(--win)">Силы Света</td></tr>${rows(x.rad)}
@@ -779,6 +884,7 @@ async function openMatch(id) {
   try {
     const x = m.demo ? demoMatch(m) : await loadMatch(m);
     if (sheet.hidden) return;
+    CUR = x;
     $("#mbody").innerHTML = matchHtml(m, x);
     if (x.gold) bindGold(x.gold);
   } catch (err) {
@@ -786,6 +892,29 @@ async function openMatch(id) {
     $("#mretry").addEventListener("click", () => openMatch(id));
   }
 }
+// фильтры билдов и карты вардов: перерисовываем только свой блок
+document.getElementById("sheet").addEventListener("click", e => {
+  const v = e.target.closest("[data-view]");
+  if (v && CUR) {
+    const [key, val] = v.dataset.view.split(":");
+    view[key] = key === "allBuys" ? val === "1" : val;
+    if (key === "allBuys") {   // раскрытые игроки остаются раскрытыми
+      const open = [...document.querySelectorAll("#builds-box details")].map(d => d.open);
+      $("#builds-box").innerHTML = buildsHtml(CUR);
+      document.querySelectorAll("#builds-box details").forEach((d, i) => { d.open = open[i]; });
+    } else $("#wards-box").innerHTML = wardsHtml(CUR);
+    return;
+  }
+  const w = e.target.closest("[data-w]");
+  if (w && CUR) {
+    const [lo, hi] = { all: [0, 1e9], "0": [0, 600], "10": [600, 1200], "20": [1200, 1800], "30": [1800, 1e9] }[view.wardTime];
+    const list = CUR.wards.filter(x => (view.wardType === "all" || x.type === view.wardType)
+      && (view.wardTeam === "all" || (view.wardTeam === "mine") === (x.radiant === CUR.meRadiant)) && x.t >= lo && x.t < hi);
+    const it = list[+w.dataset.w];
+    if (it) $("#ward-info").innerHTML = `<b style="color:var(--fg)">${it.type === "obs" ? "Обычный вард" : "Сентри"}</b> · ${esc(it.hero)}`
+      + ` (${it.radiant ? "Свет" : "Тьма"}) · <b style="color:var(--fg)">${fmtTime(it.t)}</b>`;
+  }
+});
 function closeMatch() { $("#sheet").hidden = true; document.body.style.overflow = ""; tg?.BackButton?.hide(); }
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) closeMatch(); });
 
