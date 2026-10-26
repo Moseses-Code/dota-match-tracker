@@ -103,6 +103,9 @@ class Player:
     rank_tier: int | None
     lane_role: int | None
     benchmarks: dict
+    backpack: list[int] = field(default_factory=list)
+    consumed: list[tuple[int, int]] = field(default_factory=list)   # съеденные предметы: (id, секунда)
+    picked: list[int] = field(default_factory=list)   # рапира/гем в конце игры, которые игрок не покупал
     leaver: bool = False        # вылетел/покинул игру - его фарм не отражает роль
     hero_roles: tuple = ()
     position: int | None = None
@@ -139,6 +142,31 @@ class Match:
         return sorted([p for p in self.players if p.is_radiant == radiant], key=lambda p: (p.position or 9, p.slot))
 
 
+DROPPABLE = ("rapier", "gem")   # выпадают при смерти - их можно подобрать, не покупая
+
+
+def consumed_items(p: dict, api: Api) -> list[tuple[int, int]]:
+    """Съеденные предметы (Moon Shard, Aghanim's Scepter/Shard, Tome): из permanent_buffs OpenDota."""
+    out = []
+    for b in p.get("permanent_buffs") or []:
+        name = api.permanent_buffs.get(b.get("permanent_buff"))
+        if name in api.item_ids:   # остальные усиления - от способностей героев, не предметы
+            out.append((api.item_ids[name], b.get("grant_time") or 0))
+    return sorted(out, key=lambda x: x[1])
+
+
+def picked_items(p: dict, api: Api) -> list[int]:
+    """Рапира и гем, которые были у игрока в конце, но которых нет в его покупках - значит, подобрал.
+    Только для разобранного матча: без purchase_log не отличить покупку от находки."""
+    log_ = p.get("purchase_log")
+    if not log_:
+        return []
+    bought = {b.get("key") for b in log_}
+    have = [p.get(f"item_{i}") for i in range(6)] + [p.get(f"backpack_{i}") for i in range(3)]
+    return [i for i in have if i and api.items.get(i, {}).get("name") in DROPPABLE
+            and api.items[i]["name"] not in bought]
+
+
 def parse_match(data: dict, api: Api) -> Match:
     players = []
     for p in data.get("players", []):
@@ -160,6 +188,9 @@ def parse_match(data: dict, api: Api) -> Match:
             nw10=gold_t[10] if len(gold_t) > 10 else None,
             lh10=lh_t[10] if len(lh_t) > 10 else None,
             items=[p.get(f"item_{i}", 0) for i in range(6)],
+            backpack=[b for b in (p.get(f"backpack_{i}") for i in range(3)) if b],
+            consumed=consumed_items(p, api),
+            picked=picked_items(p, api),
             neutral=p.get("item_neutral") or None,
             enhancement=p.get("item_neutral2") or None,
             rank_tier=p.get("rank_tier"),

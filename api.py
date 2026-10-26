@@ -61,6 +61,8 @@ class Api:
         self.sz_limit = RateLimiter(0.3)
         self.heroes: dict[int, dict] = {}
         self.items: dict[int, dict] = {}   # id -> {name, dname, img, cost}
+        self.item_ids: dict[str, int] = {}  # name -> id
+        self.permanent_buffs: dict[int, str] = {}   # id -> имя (moon_shard, ultimate_scepter, ...)
         self._refreshed: dict[int, float] = {}
         self._od_checked: dict[int, float] = {}   # когда фоновая проверка последний раз спрашивала OpenDota
         self._tasks: set[asyncio.Task] = set()     # фоновые задачи (ссылка, чтобы их не собрал сборщик мусора)
@@ -216,6 +218,12 @@ class Api:
             if "id" in it:
                 self.items[int(it["id"])] = {"name": name, "dname": it.get("dname") or name, "img": it.get("img"),
                                             "cost": it.get("cost") or 0}
+        self.item_ids = {it["name"]: i for i, it in self.items.items()}
+        try:   # съеденные предметы (Moon Shard, Aghanim's) приходят как «постоянные усиления»
+            buffs = await self._cached_json("permanent_buffs.json", "/constants/permanent_buffs")
+            self.permanent_buffs = {int(k): v for k, v in buffs.items()}
+        except (ApiError, ValueError) as e:
+            log.info("permanent_buffs: %s", e)
 
     async def _cached_json(self, filename, path, max_age=86400 * 3):
         f = CACHE_DIR / filename
