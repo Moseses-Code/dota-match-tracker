@@ -60,9 +60,10 @@ def line(icon: str, title: str, value: str, mine, avg, avg_txt=None, fallback=""
 
 
 def build_line(p: Player, api: Api) -> str:
-    """Финальный билд иконками предметов (если иконок ещё нет - названиями)."""
-    main = [i for i in p.items if i and i in api.items]
-    extra = [i for i in (p.neutral, p.enhancement) if i and i in api.items]
+    """Финальный билд иконками предметов (если иконок ещё нет - названиями): слоты, рюкзак,
+    нейтральные, а отдельными строками - съеденные предметы и подобранные рапира/гем."""
+    def known(ids):
+        return [i for i in ids if i and i in api.items]
 
     def show(ids):
         icons = [item_e(api.items[i]["name"]) for i in ids]
@@ -70,9 +71,18 @@ def build_line(p: Player, api: Api) -> str:
             return " ".join(icons)
         return ", ".join(escape(api.items[i]["dname"]) for i in ids)
 
+    main, bag, extra = known(p.items), known(p.backpack), known([p.neutral, p.enhancement])
     out = show(main) if main else "-"
+    if bag:
+        out += "  ┃  🎒 " + show(bag)
     if extra:
         out += "  ┃  " + show(extra)
+    eaten = known([i for i, _ in p.consumed])
+    if eaten:
+        out += "\n<i>Съедено:</i> " + show(eaten)
+    picked = known(p.picked)
+    if picked:
+        out += "\n<i>Подобрано, не куплено:</i> " + show(picked)
     return out
 
 

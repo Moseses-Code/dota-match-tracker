@@ -83,6 +83,12 @@ def details_caption(data: dict, m: Match, me: Player, api: Api) -> str:
                      f"{hero_e(opp.hero_id)} <b>{fmt_num(opp.nw10)}</b>"
                      f"  <b>{'▲' if d >= 0 else '▼'}{fmt_num(abs(d))}</b>")
 
+    if me.consumed:   # съеденные предметы - с минутой, когда съел
+        lines.append(f"{e('timing')} Съедено: " + "  ".join(
+            f"{item_e(api.items[i]['name']) or escape(api.items[i]['dname'])} {fmt_time(t)}" for i, t in me.consumed))
+    if me.picked:
+        lines.append(f"{e('more')} Подобрано, не куплено: " + "  ".join(
+            item_e(api.items[i]["name"]) or escape(api.items[i]["dname"]) for i in me.picked))
     timings = _item_timings(mine, api)
     if timings:
         lines.append(f"{e('timing')} " + "  ".join(f"{item_e(name) or escape(dname)} {fmt_time(t)}"

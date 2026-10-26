@@ -314,6 +314,7 @@ async function constant(name) {
   const c = store.get("c:" + name);
   if (c && Date.now() - c.t < 3 * 86400e3) return c.d;
   const d = await od("/constants/" + name);
+  if (name === "permanent_buffs") { store.set("c:" + name, { t: Date.now(), d }); return d; }   // id -> имя
   if (name === "items") {   // в кэш - только нужное, файл большой
     const slim = {}; for (const [k, v] of Object.entries(d)) if (v.id) slim[v.id] = { k, n: v.dname || k, img: v.img, cost: v.cost || 0 };
     store.set("c:" + name, { t: Date.now(), d: slim }); return slim;
@@ -712,7 +713,8 @@ function guessPositions(team) {
 }
 
 async function loadMatch(m) {
-  const [data, items] = await Promise.all([od(`/matches/${m.id}`), constant("items")]);
+  const [data, items, buffs] = await Promise.all([od(`/matches/${m.id}`), constant("items"),
+    constant("permanent_buffs").catch(() => ({}))]);
   if (!data) throw new Error("Матч не найден");
   const players = data.players.map(p => ({
     slot: p.player_slot, radiant: p.player_slot < 128, hero: HERO[p.hero_id]?.name || `#${p.hero_id}`, img: HERO[p.hero_id]?.img,
@@ -728,6 +730,12 @@ async function loadMatch(m) {
     p.final = [0, 1, 2, 3, 4, 5].map(i => items[p.raw["item_" + i]]).filter(Boolean);
     p.backpack = [0, 1, 2].map(i => items[p.raw["backpack_" + i]]).filter(Boolean);
     p.neutral = items[p.raw.item_neutral] || null;
+    // съеденные предметы (Moon Shard, Aghanim's) - из «постоянных усилений»; остальные усиления - от способностей
+    p.consumed = (p.raw.permanent_buffs || []).map(b => byKey[buffs[b.permanent_buff]] && { ...byKey[buffs[b.permanent_buff]], t: b.grant_time || 0 })
+      .filter(Boolean).sort((a, b) => a.t - b.t);
+    // рапира/гем в конце игры без покупки - подобрал (видно только в разобранном матче)
+    const bought = new Set((p.raw.purchase_log || []).map(b => b.key));
+    p.picked = new Set(p.raw.purchase_log ? [...p.final, ...p.backpack].filter(it => DROPPABLE.has(it.k) && !bought.has(it.k)).map(it => it.k) : []);
   }
   // варды: координаты в клетках карты (примерно 64…192 по обеим осям)
   const wards = players.flatMap(p => [["obs", p.raw.obs_log], ["sen", p.raw.sen_log]].flatMap(([type, log]) =>
@@ -791,6 +799,7 @@ function demoMatch(m) {
 
 const CONSUMABLE = new Set(["tango", "flask", "clarity", "enchanted_mango", "faerie_fire", "ward_observer", "ward_sentry",
   "ward_dispenser", "dust", "smoke_of_deceit", "tpscroll", "tome_of_knowledge", "blood_grenade", "famango", "great_famango"]);
+const DROPPABLE = new Set(["rapier", "gem"]);   // выпадают при смерти - можно подобрать, не покупая
 const view = { allBuys: false, wardType: "all", wardTeam: "all", wardTime: "all" };
 let CUR = null;   // открытый матч - для перерисовки по фильтрам
 
@@ -809,7 +818,9 @@ function buildsHtml(x) {
         : `<div class="sub-label">Время покупок появится, когда OpenDota разберёт реплей</div>`}
       <div class="sub-label">В конце игры</div><div class="items">${[...p.final.map(it => [it, ""]), ...p.backpack.map(it => [it, "рюкзак"]),
         ...(p.neutral ? [[p.neutral, "нейтр."]] : [])].map(([it, note]) =>
-        `<span class="item small" title="${esc(it.n)}">${itemIcon(it)}${note}</span>`).join("") || `<span class="s muted">-</span>`}</div>
+        `<span class="item small" title="${esc(it.n)}">${itemIcon(it)}${p.picked?.has(it.k) ? "подобран" : note}</span>`).join("") || `<span class="s muted">-</span>`}</div>
+      ${p.consumed?.length ? `<div class="sub-label">Съедено</div><div class="items">${p.consumed.map(c =>
+        `<span class="item small" title="${esc(c.n)}">${itemIcon(c)}${fmtTime(c.t)}</span>`).join("")}</div>` : ""}
     </details>`;
   };
   return `<div class="chips"><button class="chip" aria-pressed="${!view.allBuys}" data-view="allBuys:0">основные покупки</button>
